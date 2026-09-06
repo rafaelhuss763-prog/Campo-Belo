@@ -31,17 +31,23 @@ def carregar_ranking():
             dados = json.load(arquivo)
 
         for favela in FAVELAS:
-            dados.setdefault(favela, 0)
+            if favela not in dados:
+                dados[favela] = 0
 
         return dados
 
-    except:
+    except Exception:
         return {favela: 0 for favela in FAVELAS}
 
 
 def salvar_ranking():
     with open(ARQUIVO, "w", encoding="utf-8") as arquivo:
-        json.dump(ranking, arquivo, ensure_ascii=False, indent=2)
+        json.dump(
+            ranking,
+            arquivo,
+            ensure_ascii=False,
+            indent=2
+        )
 
 
 ranking = carregar_ranking()
@@ -65,29 +71,34 @@ async def ranking_comando(interaction: discord.Interaction):
         reverse=True
     )
 
-    medalhas = ["🥇", "🥈", "🥉"]
     texto = ""
 
     for posicao, (favela, valor) in enumerate(lista, start=1):
 
-        if posicao <= 3:
-            colocacao = medalhas[posicao - 1]
+        if valor > 0 and posicao == 1:
+            icone = "🥇"
+        elif valor > 0 and posicao == 2:
+            icone = "🥈"
+        elif valor > 0 and posicao == 3:
+            icone = "🥉"
         else:
-            colocacao = f"**{posicao}º**"
+            icone = f"**{posicao}º**"
 
-        texto += f"{colocacao} **{favela}** — `${valor:,.0f}`\n"
+        texto += f"{icone} **{favela}** — `${valor:,.0f}`\n"
 
     embed = discord.Embed(
         title="🏆 RANKING — CAMPO BELO",
         description=texto
     )
 
-    await interaction.response.send_message(embed=embed)
+    await interaction.response.send_message(
+        embed=embed
+    )
 
 
 @bot.tree.command(
     name="adicionargasto",
-    description="Adiciona um valor gasto por uma favela"
+    description="Adiciona dinheiro gasto por uma favela"
 )
 @app_commands.describe(
     favela="Nome da favela",
@@ -97,12 +108,12 @@ async def ranking_comando(interaction: discord.Interaction):
 async def adicionar_gasto(
     interaction: discord.Interaction,
     favela: str,
-    valor: float
+    valor: int
 ):
 
     if favela not in FAVELAS:
         await interaction.response.send_message(
-            "❌ Essa favela não está cadastrada.",
+            "❌ Favela não cadastrada.",
             ephemeral=True
         )
         return
@@ -118,16 +129,16 @@ async def adicionar_gasto(
     salvar_ranking()
 
     await interaction.response.send_message(
-        f"✅ Gasto registrado!\n"
-        f"🏘️ **{favela}**\n"
-        f"💰 Gasto adicionado: **${valor:,.0f}**\n"
+        f"✅ **Gasto registrado!**\n\n"
+        f"🏘️ Favela: **{favela}**\n"
+        f"💰 Adicionado: **${valor:,.0f}**\n"
         f"📊 Total: **${ranking[favela]:,.0f}**"
     )
 
 
 @bot.tree.command(
     name="gastototal",
-    description="Consulta o total gasto por uma favela"
+    description="Mostra quanto uma favela já gastou"
 )
 @app_commands.describe(
     favela="Nome da favela"
@@ -139,7 +150,7 @@ async def gasto_total(
 
     if favela not in FAVELAS:
         await interaction.response.send_message(
-            "❌ Essa favela não está cadastrada.",
+            "❌ Favela não cadastrada.",
             ephemeral=True
         )
         return
@@ -152,7 +163,7 @@ async def gasto_total(
 
 @bot.tree.command(
     name="removergasto",
-    description="Remove um valor do total gasto"
+    description="Remove dinheiro do total de uma favela"
 )
 @app_commands.describe(
     favela="Nome da favela",
@@ -162,12 +173,12 @@ async def gasto_total(
 async def remover_gasto(
     interaction: discord.Interaction,
     favela: str,
-    valor: float
+    valor: int
 ):
 
     if favela not in FAVELAS:
         await interaction.response.send_message(
-            "❌ Essa favela não está cadastrada.",
+            "❌ Favela não cadastrada.",
             ephemeral=True
         )
         return
@@ -187,22 +198,20 @@ async def remover_gasto(
     salvar_ranking()
 
     await interaction.response.send_message(
-        f"↩️ Gasto corrigido!\n"
-        f"🏘️ **{favela}**\n"
-        f"💰 Total agora: **${ranking[favela]:,.0f}**"
+        f"↩️ **Gasto corrigido!**\n\n"
+        f"🏘️ Favela: **{favela}**\n"
+        f"📊 Total: **${ranking[favela]:,.0f}**"
     )
 
 
 @bot.tree.command(
     name="zerarranking",
-    description="Zera todos os gastos do ranking"
+    description="Zera todos os gastos"
 )
 @app_commands.checks.has_permissions(administrator=True)
 async def zerar_ranking(
     interaction: discord.Interaction
 ):
-
-    ranking.clear()
 
     for favela in FAVELAS:
         ranking[favela] = 0
@@ -210,7 +219,7 @@ async def zerar_ranking(
     salvar_ranking()
 
     await interaction.response.send_message(
-        "⚠️ **Ranking de gastos zerado com sucesso!**"
+        "⚠️ **Ranking zerado com sucesso!**"
     )
 
 
