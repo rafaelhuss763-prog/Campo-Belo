@@ -1,11 +1,9 @@
 import os
-import json
 import discord
 from discord.ext import commands
 from discord import app_commands
 
 TOKEN = os.getenv("DISCORD_TOKEN")
-ARQUIVO = "ranking.json"
 
 FAVELAS = [
     "São Remo",
@@ -21,38 +19,25 @@ FAVELAS = [
     "Bololo"
 ]
 
+# Ranking fica na memória do bot
+ranking = {favela: 0 for favela in FAVELAS}
+
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-def carregar_ranking():
-    try:
-        with open(ARQUIVO, "r", encoding="utf-8") as arquivo:
-            dados = json.load(arquivo)
-
-        for favela in FAVELAS:
-            if favela not in dados:
-                dados[favela] = 0
-
-        return dados
-
-    except Exception:
-        return {favela: 0 for favela in FAVELAS}
-
-
-def salvar_ranking():
-    with open(ARQUIVO, "w", encoding="utf-8") as arquivo:
-        json.dump(ranking, arquivo, ensure_ascii=False, indent=2)
-
-
-ranking = carregar_ranking()
-
-
 @bot.event
 async def on_ready():
-    await bot.tree.sync()
-    print(f"Bot online como {bot.user}")
+    try:
+        await bot.tree.sync()
+        print(f"Bot online como {bot.user}")
+    except Exception as erro:
+        print(f"Erro ao sincronizar comandos: {erro}")
 
+
+# =========================
+# RANKING
+# =========================
 
 @bot.tree.command(
     name="ranking",
@@ -89,6 +74,10 @@ async def ranking_comando(interaction: discord.Interaction):
     await interaction.response.send_message(embed=embed)
 
 
+# =========================
+# ADICIONAR GASTO
+# =========================
+
 @bot.tree.command(
     name="adicionargasto",
     description="Adiciona dinheiro gasto por uma favela"
@@ -106,7 +95,7 @@ async def adicionar_gasto(
 
     if favela not in FAVELAS:
         await interaction.response.send_message(
-            "❌ Favela não cadastrada.",
+            "❌ Essa favela não está cadastrada.",
             ephemeral=True
         )
         return
@@ -119,7 +108,6 @@ async def adicionar_gasto(
         return
 
     ranking[favela] += valor
-    salvar_ranking()
 
     await interaction.response.send_message(
         f"✅ **Gasto registrado!**\n\n"
@@ -128,6 +116,10 @@ async def adicionar_gasto(
         f"📊 Total: **${ranking[favela]:,.0f}**"
     )
 
+
+# =========================
+# GASTO TOTAL
+# =========================
 
 @bot.tree.command(
     name="gastototal",
@@ -143,7 +135,7 @@ async def gasto_total(
 
     if favela not in FAVELAS:
         await interaction.response.send_message(
-            "❌ Favela não cadastrada.",
+            "❌ Essa favela não está cadastrada.",
             ephemeral=True
         )
         return
@@ -153,6 +145,10 @@ async def gasto_total(
         f"**${ranking[favela]:,.0f}**."
     )
 
+
+# =========================
+# REMOVER GASTO
+# =========================
 
 @bot.tree.command(
     name="removergasto",
@@ -171,7 +167,7 @@ async def remover_gasto(
 
     if favela not in FAVELAS:
         await interaction.response.send_message(
-            "❌ Favela não cadastrada.",
+            "❌ Essa favela não está cadastrada.",
             ephemeral=True
         )
         return
@@ -188,14 +184,17 @@ async def remover_gasto(
         ranking[favela] - valor
     )
 
-    salvar_ranking()
-
     await interaction.response.send_message(
         f"↩️ **Gasto corrigido!**\n\n"
         f"🏘️ Favela: **{favela}**\n"
+        f"➖ Removido: **${valor:,.0f}**\n"
         f"📊 Total: **${ranking[favela]:,.0f}**"
     )
 
+
+# =========================
+# ZERAR RANKING
+# =========================
 
 @bot.tree.command(
     name="zerarranking",
@@ -209,12 +208,14 @@ async def zerar_ranking(
     for favela in FAVELAS:
         ranking[favela] = 0
 
-    salvar_ranking()
-
     await interaction.response.send_message(
         "⚠️ **Ranking zerado com sucesso!**"
     )
 
+
+# =========================
+# ERROS
+# =========================
 
 @bot.tree.error
 async def erro_comando(
@@ -223,21 +224,47 @@ async def erro_comando(
 ):
 
     if isinstance(error, app_commands.MissingPermissions):
-        mensagem = "❌ Você precisa ser **Administrador** para usar esse comando."
+
+        mensagem = (
+            "❌ Você precisa ter a permissão "
+            "**Administrador** para usar esse comando."
+        )
+
     else:
+
         print(f"Erro no comando: {error}")
-        mensagem = "❌ Ocorreu um erro ao executar o comando."
 
-    if interaction.response.is_done():
-        await interaction.followup.send(
-            mensagem,
-            ephemeral=True
-        )
-    else:
-        await interaction.response.send_message(
-            mensagem,
-            ephemeral=True
+        mensagem = (
+            "❌ Ocorreu um erro ao executar o comando."
         )
 
+    try:
 
-bot.run(TOKEN)
+        if interaction.response.is_done():
+
+            await interaction.followup.send(
+                mensagem,
+                ephemeral=True
+            )
+
+        else:
+
+            await interaction.response.send_message(
+                mensagem,
+                ephemeral=True
+            )
+
+    except Exception as erro:
+
+        print(f"Erro ao enviar mensagem de erro: {erro}")
+
+
+# =========================
+# INICIAR BOT
+# =========================
+
+if not TOKEN:
+    print("❌ DISCORD_TOKEN não foi encontrado!")
+
+else:
+    bot.run(TOKEN)
