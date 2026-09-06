@@ -1,15 +1,15 @@
 import os
-import asyncio
+import re
 import discord
 from discord import app_commands
 
-# =========================
-# CONFIGURAÇÕES
-# =========================
+# =========================================================
+# CONFIGURAÇÃO
+# =========================================================
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# COLOQUE AQUI OS 3 NOVOS WEBHOOKS
+# COLOQUE SEUS 3 NOVOS WEBHOOKS AQUI
 WEBHOOK_ADICIONAR = "https://discord.com/api/webhooks/1546272715818672218/M2uvS74jTofIkxj_mkR70p-YaiTgYpmUHnYNnDe70NcrJCRoOlGDdinlQRDf7z_5Vt6T"
 WEBHOOK_REMOVER = "https://discord.com/api/webhooks/1546273099987554389/j3yWVi6gLdx8saZKuoQ4L2MHe8BcoBaIHgzeQWSRALVfpBrcuYdX9YXR6uXWFi7ptoDd"
 WEBHOOK_RANKING = "https://discord.com/api/webhooks/1546273377541423124/8M1YJqPtCkcZ-Z9RGfCMrRk0_7xFpufUBUoW5PH-KLGfDbLPstm-c7s8co3LKIUwD1gF"
@@ -28,7 +28,7 @@ FAVELAS = [
     "Bololo"
 ]
 
-MARKER = "CAMPO_BELO_RANKING_V1"
+MARCADOR = "CAMPO_BELO_RANKING_V2"
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -37,57 +37,68 @@ intents.messages = True
 bot = discord.Client(intents=intents)
 tree = app_commands.CommandTree(bot)
 
-# Guarda a mensagem do ranking em memória
 ranking_message = None
-ranking_channel_id = None
-ranking_message_id = None
 
 
-# =========================
-# DADOS
-# =========================
+# =========================================================
+# FUNÇÕES DOS VALORES
+# =========================================================
 
 def novo_ranking():
     return {favela: 0 for favela in FAVELAS}
 
 
 def dinheiro(valor):
-    return f"R$ {valor:,.0f}".replace(",", ".")
+    return f"R$ {valor:,}".replace(",", ".")
 
 
 def criar_embed(dados):
-    ordenado = sorted(
+
+    ranking = sorted(
         dados.items(),
-        key=lambda x: x[1],
+        key=lambda item: item[1],
         reverse=True
     )
 
-    descricao = ""
+    linhas = []
 
-    for posicao, (favela, valor) in enumerate(ordenado, start=1):
+    for posicao, (favela, valor) in enumerate(ranking, 1):
+
         if posicao == 1:
-            emoji = "🥇"
+            prefixo = "🥇"
         elif posicao == 2:
-            emoji = "🥈"
+            prefixo = "🥈"
         elif posicao == 3:
-            emoji = "🥉"
+            prefixo = "🥉"
         else:
-            emoji = f"**{posicao}º**"
+            prefixo = f"**{posicao}º**"
 
-        descricao += f"{emoji} **{favela}** — {dinheiro(valor)}\n"
+        linhas.append(
+            f"{prefixo} **{favela}** — {dinheiro(valor)}"
+        )
 
     embed = discord.Embed(
         title="🏆 RANKING CAMPO BELO",
-        description=descricao,
+        description="\n".join(linhas),
         color=discord.Color.gold()
     )
 
-    embed.set_footer(text=MARKER)
+    # Guardamos os valores também em fields ocultos.
+    # Isso evita problemas de leitura do texto.
+    for favela in FAVELAS:
+        embed.add_field(
+            name=favela,
+            value=str(dados[favela]),
+            inline=True
+        )
+
+    embed.set_footer(text=MARCADOR)
 
     return embed
 
 
-def ler_ranking_da_mensagem(message):
+def ler_ranking(message):
+
     dados = novo_ranking()
 
     if not message.embeds:
@@ -95,93 +106,132 @@ def ler_ranking_da_mensagem(message):
 
     embed = message.embeds[0]
 
-    if not embed.description:
-        return dados
+    # =====================================================
+    # PRIMEIRA FORMA: LER OS FIELDS
+    # =====================================================
 
-    linhas = embed.description.split("\n")
+    for field in embed.fields:
 
-    for linha in linhas:
-        for favela in FAVELAS:
-            if f"**{favela}**" in linha:
-                try:
-                    parte = linha.split("—")[1]
-                    numero = (
-                        parte
-                        .replace("R$", "")
-                        .replace(".", "")
-                        .replace(",", "")
-                        .strip()
-                    )
+        if field.name in dados:
 
-                    dados[favela] = int(numero)
-                except:
-                    pass
+            try:
+                dados[field.name] = int(
+                    field.value.strip()
+                )
+            except:
+                dados[field.name] = 0
+
+    # =====================================================
+    # SEGUNDA FORMA: LER O TEXTO
+    # =====================================================
+
+    for favela in FAVELAS:
+
+        # Se já conseguimos ler pelo field, mantém.
+        if dados[favela] != 0:
+            continue
+
+        if not embed.description:
+            continue
+
+        padrao = re.escape(favela) + r".*?R\$\s*([\d\.]+)"
+
+        resultado = re.search(
+            padrao,
+            embed.description
+        )
+
+        if resultado:
+
+            numero = resultado.group(1)
+
+            try:
+                dados[favela] = int(
+                    numero.replace(".", "")
+                )
+            except:
+                pass
 
     return dados
 
 
-# =========================
-# PROCURAR RANKING
-# =========================
+# =========================================================
+# ENCONTRAR A MENSAGEM DO RANKING
+# =========================================================
 
 async def procurar_ranking():
-    global ranking_message
-    global ranking_channel_id
-    global ranking_message_id
 
+    global ranking_message
+
+    # Se já temos a mensagem, tentamos usar ela.
+    if ranking_message is not None:
+
+        try:
+            ranking_message = await ranking_message.channel.fetch_message(
+                ranking_message.id
+            )
+
+            if ranking_message.embeds:
+
+                footer = ranking_message.embeds[0].footer
+
+                if footer and footer.text == MARCADOR:
+                    return ranking_message
+
+        except:
+            ranking_message = None
+
+    # Procura o ranking no servidor.
     for guild in bot.guilds:
+
         for channel in guild.text_channels:
 
             try:
+
                 async for message in channel.history(limit=100):
+
                     if message.author.id != bot.user.id:
                         continue
 
                     if not message.embeds:
                         continue
 
-                    embed = message.embeds[0]
+                    footer = message.embeds[0].footer
 
-                    if embed.footer and embed.footer.text == MARKER:
+                    if footer and footer.text == MARCADOR:
+
                         ranking_message = message
-                        ranking_channel_id = channel.id
-                        ranking_message_id = message.id
 
                         return message
 
-            except:
-                continue
+            except Exception as erro:
+                print(
+                    f"Não consegui verificar #{channel.name}: {erro}"
+                )
 
     return None
 
 
-# =========================
+# =========================================================
 # CARREGAR RANKING
-# =========================
+# =========================================================
 
 async def carregar_ranking():
-    global ranking_message
-
-    if ranking_message is not None:
-        try:
-            await ranking_message.fetch()
-            return ler_ranking_da_mensagem(ranking_message)
-        except:
-            ranking_message = None
 
     message = await procurar_ranking()
 
-    if message:
-        return ler_ranking_da_mensagem(message)
+    if message is None:
+        return None
 
-    return novo_ranking()
+    return ler_ranking(message)
 
 
-# =========================
+# =========================================================
 # ATUALIZAR RANKING
-# =========================
+# =========================================================
 
 async def atualizar_ranking(dados):
+
     global ranking_message
 
     if ranking_message is None:
@@ -191,23 +241,38 @@ async def atualizar_ranking(dados):
         return False
 
     try:
+
         await ranking_message.edit(
             embed=criar_embed(dados)
         )
+
         return True
-    except:
+
+    except Exception as erro:
+
+        print(
+            f"Erro ao atualizar ranking: {erro}"
+        )
+
+        ranking_message = None
+
         return False
 
 
-# =========================
+# =========================================================
 # WEBHOOK
-# =========================
+# =========================================================
 
 async def enviar_webhook(url, embed):
-    if not url or url.startswith("COLE_AQUI"):
+
+    if not url:
+        return
+
+    if url.startswith("COLE_AQUI"):
         return
 
     try:
+
         webhook = discord.Webhook.from_url(
             url,
             client=bot
@@ -220,21 +285,30 @@ async def enviar_webhook(url, embed):
         )
 
     except Exception as erro:
-        print(f"Erro no webhook: {erro}")
+
+        print(
+            f"Erro no webhook: {erro}"
+        )
 
 
-# =========================
-# LOG ADICIONAR
-# =========================
+# =========================================================
+# LOG DE ADICIONAR
+# =========================================================
 
-async def log_adicionar(usuario, favela, valor, total):
+async def log_adicionar(
+    usuario,
+    favela,
+    valor,
+    total
+):
+
     embed = discord.Embed(
         title="➕ GASTO ADICIONADO",
         color=discord.Color.green()
     )
 
     embed.add_field(
-        name="👤 Quem adicionou",
+        name="👤 Responsável",
         value=usuario.mention,
         inline=False
     )
@@ -263,18 +337,24 @@ async def log_adicionar(usuario, favela, valor, total):
     )
 
 
-# =========================
-# LOG REMOVER
-# =========================
+# =========================================================
+# LOG DE REMOVER
+# =========================================================
 
-async def log_remover(usuario, favela, valor, total):
+async def log_remover(
+    usuario,
+    favela,
+    valor,
+    total
+):
+
     embed = discord.Embed(
         title="➖ GASTO REMOVIDO",
         color=discord.Color.red()
     )
 
     embed.add_field(
-        name="👤 Quem removeu",
+        name="👤 Responsável",
         value=usuario.mention,
         inline=False
     )
@@ -303,11 +383,15 @@ async def log_remover(usuario, favela, valor, total):
     )
 
 
-# =========================
+# =========================================================
 # LOG GERAL
-# =========================
+# =========================================================
 
-async def log_ranking(titulo, descricao):
+async def log_geral(
+    titulo,
+    descricao
+):
+
     embed = discord.Embed(
         title=titulo,
         description=descricao,
@@ -320,42 +404,42 @@ async def log_ranking(titulo, descricao):
     )
 
 
-# =========================
+# =========================================================
 # /CRIARRANKING
-# =========================
+# =========================================================
 
 @tree.command(
     name="criarranking",
     description="Cria o ranking das favelas"
 )
-async def criarranking(interaction: discord.Interaction):
+async def criarranking(
+    interaction: discord.Interaction
+):
 
     global ranking_message
-    global ranking_channel_id
-    global ranking_message_id
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
 
     existente = await procurar_ranking()
 
     if existente:
+
         await interaction.followup.send(
             "⚠️ Já existe um ranking neste servidor.",
             ephemeral=True
         )
+
         return
 
     dados = novo_ranking()
 
-    message = await interaction.channel.send(
+    ranking_message = await interaction.channel.send(
         embed=criar_embed(dados)
     )
 
-    ranking_message = message
-    ranking_channel_id = message.channel.id
-    ranking_message_id = message.id
-
-    await log_ranking(
+    await log_geral(
         "🏆 RANKING CRIADO",
         f"👤 Criado por: {interaction.user.mention}\n"
         f"📍 Canal: {interaction.channel.mention}"
@@ -367,36 +451,37 @@ async def criarranking(interaction: discord.Interaction):
     )
 
 
-# =========================
+# =========================================================
 # /RANKING
-# =========================
+# =========================================================
 
 @tree.command(
     name="ranking",
     description="Mostra o ranking atual"
 )
-async def ranking(interaction: discord.Interaction):
+async def ranking(
+    interaction: discord.Interaction
+):
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
 
     dados = await carregar_ranking()
 
-    ordenado = sorted(
-        dados.items(),
-        key=lambda x: x[1],
-        reverse=True
-    )
+    if dados is None:
 
-    texto = ""
+        await interaction.followup.send(
+            "❌ O ranking ainda não foi criado. Use `/criarranking`.",
+            ephemeral=True
+        )
 
-    for posicao, (favela, valor) in enumerate(ordenado, start=1):
-        texto += f"**{posicao}º — {favela}**: {dinheiro(valor)}\n"
+        return
 
-    embed = discord.Embed(
-        title="🏆 RANKING CAMPO BELO",
-        description=texto,
-        color=discord.Color.gold()
-    )
+    embed = criar_embed(dados)
+
+    # Remove os fields para o usuário não ver os números técnicos.
+    embed.clear_fields()
 
     await interaction.followup.send(
         embed=embed,
@@ -404,13 +489,13 @@ async def ranking(interaction: discord.Interaction):
     )
 
 
-# =========================
+# =========================================================
 # /ADICIONARGASTO
-# =========================
+# =========================================================
 
 @tree.command(
     name="adicionargasto",
-    description="Adiciona dinheiro gasto por uma favela"
+    description="Adiciona um gasto para uma favela"
 )
 @app_commands.describe(
     favela="Favela que realizou a compra",
@@ -422,33 +507,50 @@ async def adicionargasto(
     valor: int
 ):
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
 
     if favela not in FAVELAS:
+
         await interaction.followup.send(
             "❌ Favela inválida.",
             ephemeral=True
         )
+
         return
 
     if valor <= 0:
+
         await interaction.followup.send(
             "❌ O valor precisa ser maior que 0.",
             ephemeral=True
         )
+
         return
 
     dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ O ranking ainda não foi criado. Use `/criarranking`.",
+            ephemeral=True
+        )
+
+        return
 
     dados[favela] += valor
 
     sucesso = await atualizar_ranking(dados)
 
     if not sucesso:
+
         await interaction.followup.send(
-            "❌ Não encontrei a mensagem do ranking. Use `/criarranking` primeiro.",
+            "❌ Não consegui atualizar o ranking.",
             ephemeral=True
         )
+
         return
 
     await log_adicionar(
@@ -465,13 +567,13 @@ async def adicionargasto(
     )
 
 
-# =========================
+# =========================================================
 # /REMOVERGASTO
-# =========================
+# =========================================================
 
 @tree.command(
     name="removergasto",
-    description="Remove dinheiro gasto de uma favela"
+    description="Remove um gasto de uma favela"
 )
 @app_commands.describe(
     favela="Favela",
@@ -483,29 +585,47 @@ async def removergasto(
     valor: int
 ):
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
 
     if favela not in FAVELAS:
+
         await interaction.followup.send(
             "❌ Favela inválida.",
             ephemeral=True
         )
+
         return
 
     if valor <= 0:
+
         await interaction.followup.send(
             "❌ O valor precisa ser maior que 0.",
             ephemeral=True
         )
+
         return
 
     dados = await carregar_ranking()
 
-    if valor > dados[favela]:
+    if dados is None:
+
         await interaction.followup.send(
-            f"❌ A **{favela}** não possui esse valor para remover.",
+            "❌ O ranking ainda não foi criado.",
             ephemeral=True
         )
+
+        return
+
+    if dados[favela] < valor:
+
+        await interaction.followup.send(
+            f"❌ A **{favela}** tem apenas "
+            f"**{dinheiro(dados[favela])}** no ranking.",
+            ephemeral=True
+        )
+
         return
 
     dados[favela] -= valor
@@ -513,10 +633,12 @@ async def removergasto(
     sucesso = await atualizar_ranking(dados)
 
     if not sucesso:
+
         await interaction.followup.send(
-            "❌ Não encontrei a mensagem do ranking.",
+            "❌ Não consegui atualizar o ranking.",
             ephemeral=True
         )
+
         return
 
     await log_remover(
@@ -533,13 +655,13 @@ async def removergasto(
     )
 
 
-# =========================
+# =========================================================
 # /GASTOTOTAL
-# =========================
+# =========================================================
 
 @tree.command(
     name="gastototal",
-    description="Mostra quanto uma favela já gastou"
+    description="Mostra o total gasto por uma favela"
 )
 @app_commands.describe(
     favela="Favela"
@@ -549,16 +671,29 @@ async def gastototal(
     favela: str
 ):
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
 
     if favela not in FAVELAS:
+
         await interaction.followup.send(
             "❌ Favela inválida.",
             ephemeral=True
         )
+
         return
 
     dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ O ranking ainda não foi criado.",
+            ephemeral=True
+        )
+
+        return
 
     await interaction.followup.send(
         f"🏘️ **{favela}**\n"
@@ -567,32 +702,49 @@ async def gastototal(
     )
 
 
-# =========================
+# =========================================================
 # /ZERARRANKING
-# =========================
+# =========================================================
 
 @tree.command(
     name="zerarranking",
-    description="Zera todos os gastos do ranking"
+    description="Zera todos os gastos"
 )
-async def zerarranking(interaction: discord.Interaction):
+async def zerarranking(
+    interaction: discord.Interaction
+):
 
-    await interaction.response.defer(ephemeral=True)
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ O ranking ainda não foi criado.",
+            ephemeral=True
+        )
+
+        return
 
     dados = novo_ranking()
 
     sucesso = await atualizar_ranking(dados)
 
     if not sucesso:
+
         await interaction.followup.send(
-            "❌ Não encontrei a mensagem do ranking.",
+            "❌ Não consegui atualizar o ranking.",
             ephemeral=True
         )
+
         return
 
-    await log_ranking(
+    await log_geral(
         "🗑️ RANKING ZERADO",
-        f"👤 Quem zerou: {interaction.user.mention}"
+        f"👤 Responsável: {interaction.user.mention}"
     )
 
     await interaction.followup.send(
@@ -601,36 +753,55 @@ async def zerarranking(interaction: discord.Interaction):
     )
 
 
-# =========================
+# =========================================================
 # BOT ONLINE
-# =========================
+# =========================================================
 
 @bot.event
 async def on_ready():
 
-    global ranking_message
+    print(f"🤖 Bot online: {bot.user}")
 
     try:
+
         await tree.sync()
-        print("Comandos sincronizados.")
+
+        print("✅ Comandos sincronizados.")
+
     except Exception as erro:
-        print(f"Erro ao sincronizar comandos: {erro}")
+
+        print(
+            f"❌ Erro ao sincronizar comandos: {erro}"
+        )
 
     try:
-        ranking_message = await procurar_ranking()
+
+        await procurar_ranking()
+
+        if ranking_message:
+            print(
+                f"✅ Ranking encontrado: {ranking_message.id}"
+            )
+        else:
+            print(
+                "ℹ️ Nenhum ranking encontrado."
+            )
+
     except Exception as erro:
-        print(f"Erro ao procurar ranking: {erro}")
 
-    print(f"Bot online como {bot.user}")
+        print(
+            f"❌ Erro ao procurar ranking: {erro}"
+        )
 
 
-# =========================
+# =========================================================
 # INICIAR
-# =========================
+# =========================================================
 
 if not TOKEN:
+
     raise RuntimeError(
-        "A variável DISCORD_TOKEN não foi configurada."
+        "❌ A variável DISCORD_TOKEN não foi configurada no Temalix."
     )
 
 bot.run(TOKEN)
