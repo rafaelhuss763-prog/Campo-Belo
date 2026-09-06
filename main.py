@@ -19,31 +19,24 @@ FAVELAS = [
     "Bololo"
 ]
 
-# Ranking fica na memória do bot
+# =========================
+# CONFIGURAÇÕES
+# =========================
+
 ranking = {favela: 0 for favela in FAVELAS}
+
+# Guarda a mensagem do ranking enquanto o bot estiver ligado
+mensagem_ranking = None
 
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 
-@bot.event
-async def on_ready():
-    try:
-        await bot.tree.sync()
-        print(f"Bot online como {bot.user}")
-    except Exception as erro:
-        print(f"Erro ao sincronizar comandos: {erro}")
-
-
 # =========================
-# RANKING
+# GERAR RANKING
 # =========================
 
-@bot.tree.command(
-    name="ranking",
-    description="Mostra o ranking de gastos das favelas"
-)
-async def ranking_comando(interaction: discord.Interaction):
+def criar_embed():
 
     lista = sorted(
         ranking.items(),
@@ -64,14 +57,111 @@ async def ranking_comando(interaction: discord.Interaction):
         else:
             icone = f"**{posicao}º**"
 
-        texto += f"{icone} **{favela}** — `${valor:,.0f}`\n"
+        texto += (
+            f"{icone} **{favela}** "
+            f"— `${valor:,.0f}`\n"
+        )
 
     embed = discord.Embed(
         title="🏆 RANKING — CAMPO BELO",
         description=texto
     )
 
-    await interaction.response.send_message(embed=embed)
+    embed.set_footer(
+        text="Ranking atualizado automaticamente"
+    )
+
+    return embed
+
+
+# =========================
+# ATUALIZAR MENSAGEM
+# =========================
+
+async def atualizar_ranking():
+
+    global mensagem_ranking
+
+    if mensagem_ranking is not None:
+
+        try:
+
+            await mensagem_ranking.edit(
+                embed=criar_embed()
+            )
+
+        except Exception as erro:
+
+            print(
+                f"Não foi possível atualizar o ranking: {erro}"
+            )
+
+
+# =========================
+# BOT ONLINE
+# =========================
+
+@bot.event
+async def on_ready():
+
+    try:
+
+        await bot.tree.sync()
+
+        print(
+            f"Bot online como {bot.user}"
+        )
+
+    except Exception as erro:
+
+        print(
+            f"Erro ao sincronizar comandos: {erro}"
+        )
+
+
+# =========================
+# CRIAR RANKING
+# =========================
+
+@bot.tree.command(
+    name="criarranking",
+    description="Cria a mensagem fixa do ranking neste canal"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def criar_ranking(
+    interaction: discord.Interaction
+):
+
+    global mensagem_ranking
+
+    embed = criar_embed()
+
+    mensagem_ranking = await interaction.channel.send(
+        embed=embed
+    )
+
+    await interaction.response.send_message(
+        "✅ **Ranking criado com sucesso!**\n"
+        "Ele será atualizado automaticamente.",
+        ephemeral=True
+    )
+
+
+# =========================
+# RANKING
+# =========================
+
+@bot.tree.command(
+    name="ranking",
+    description="Mostra o ranking atual"
+)
+async def ranking_comando(
+    interaction: discord.Interaction
+):
+
+    await interaction.response.send_message(
+        embed=criar_embed()
+    )
 
 
 # =========================
@@ -94,26 +184,33 @@ async def adicionar_gasto(
 ):
 
     if favela not in FAVELAS:
+
         await interaction.response.send_message(
             "❌ Essa favela não está cadastrada.",
             ephemeral=True
         )
+
         return
 
     if valor <= 0:
+
         await interaction.response.send_message(
             "❌ O valor precisa ser maior que 0.",
             ephemeral=True
         )
+
         return
 
     ranking[favela] += valor
+
+    await atualizar_ranking()
 
     await interaction.response.send_message(
         f"✅ **Gasto registrado!**\n\n"
         f"🏘️ Favela: **{favela}**\n"
         f"💰 Adicionado: **${valor:,.0f}**\n"
-        f"📊 Total: **${ranking[favela]:,.0f}**"
+        f"📊 Total: **${ranking[favela]:,.0f}**",
+        ephemeral=True
     )
 
 
@@ -134,10 +231,12 @@ async def gasto_total(
 ):
 
     if favela not in FAVELAS:
+
         await interaction.response.send_message(
             "❌ Essa favela não está cadastrada.",
             ephemeral=True
         )
+
         return
 
     await interaction.response.send_message(
@@ -166,17 +265,21 @@ async def remover_gasto(
 ):
 
     if favela not in FAVELAS:
+
         await interaction.response.send_message(
             "❌ Essa favela não está cadastrada.",
             ephemeral=True
         )
+
         return
 
     if valor <= 0:
+
         await interaction.response.send_message(
             "❌ O valor precisa ser maior que 0.",
             ephemeral=True
         )
+
         return
 
     ranking[favela] = max(
@@ -184,11 +287,14 @@ async def remover_gasto(
         ranking[favela] - valor
     )
 
+    await atualizar_ranking()
+
     await interaction.response.send_message(
         f"↩️ **Gasto corrigido!**\n\n"
         f"🏘️ Favela: **{favela}**\n"
         f"➖ Removido: **${valor:,.0f}**\n"
-        f"📊 Total: **${ranking[favela]:,.0f}**"
+        f"📊 Total: **${ranking[favela]:,.0f}**",
+        ephemeral=True
     )
 
 
@@ -208,13 +314,16 @@ async def zerar_ranking(
     for favela in FAVELAS:
         ranking[favela] = 0
 
+    await atualizar_ranking()
+
     await interaction.response.send_message(
-        "⚠️ **Ranking zerado com sucesso!**"
+        "⚠️ **Ranking zerado com sucesso!**",
+        ephemeral=True
     )
 
 
 # =========================
-# ERROS
+# TRATAMENTO DE ERROS
 # =========================
 
 @bot.tree.error
@@ -223,19 +332,25 @@ async def erro_comando(
     error: app_commands.AppCommandError
 ):
 
-    if isinstance(error, app_commands.MissingPermissions):
+    if isinstance(
+        error,
+        app_commands.MissingPermissions
+    ):
 
         mensagem = (
-            "❌ Você precisa ter a permissão "
-            "**Administrador** para usar esse comando."
+            "❌ Você precisa ser **Administrador** "
+            "para usar esse comando."
         )
 
     else:
 
-        print(f"Erro no comando: {error}")
+        print(
+            f"Erro no comando: {error}"
+        )
 
         mensagem = (
-            "❌ Ocorreu um erro ao executar o comando."
+            "❌ Ocorreu um erro ao executar "
+            "o comando."
         )
 
     try:
@@ -256,15 +371,21 @@ async def erro_comando(
 
     except Exception as erro:
 
-        print(f"Erro ao enviar mensagem de erro: {erro}")
+        print(
+            f"Erro ao enviar mensagem: {erro}"
+        )
 
 
 # =========================
-# INICIAR BOT
+# INICIAR
 # =========================
 
 if not TOKEN:
-    print("❌ DISCORD_TOKEN não foi encontrado!")
+
+    print(
+        "❌ DISCORD_TOKEN não foi encontrado!"
+    )
 
 else:
+
     bot.run(TOKEN)
