@@ -42,12 +42,7 @@ def carregar_ranking():
 
 def salvar_ranking():
     with open(ARQUIVO, "w", encoding="utf-8") as arquivo:
-        json.dump(
-            ranking,
-            arquivo,
-            ensure_ascii=False,
-            indent=2
-        )
+        json.dump(ranking, arquivo, ensure_ascii=False, indent=2)
 
 
 ranking = carregar_ranking()
@@ -91,9 +86,7 @@ async def ranking_comando(interaction: discord.Interaction):
         description=texto
     )
 
-    await interaction.response.send_message(
-        embed=embed
-    )
+    await interaction.response.send_message(embed=embed)
 
 
 @bot.tree.command(
@@ -221,6 +214,30 @@ async def zerar_ranking(
     await interaction.response.send_message(
         "⚠️ **Ranking zerado com sucesso!**"
     )
+
+
+@bot.tree.error
+async def erro_comando(
+    interaction: discord.Interaction,
+    error: app_commands.AppCommandError
+):
+
+    if isinstance(error, app_commands.MissingPermissions):
+        mensagem = "❌ Você precisa ser **Administrador** para usar esse comando."
+    else:
+        print(f"Erro no comando: {error}")
+        mensagem = "❌ Ocorreu um erro ao executar o comando."
+
+    if interaction.response.is_done():
+        await interaction.followup.send(
+            mensagem,
+            ephemeral=True
+        )
+    else:
+        await interaction.response.send_message(
+            mensagem,
+            ephemeral=True
+        )
 
 
 bot.run(TOKEN)
