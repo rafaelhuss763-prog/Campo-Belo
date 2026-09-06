@@ -7,19 +7,42 @@ from discord import app_commands
 TOKEN = os.getenv("DISCORD_TOKEN")
 ARQUIVO = "ranking.json"
 
+FAVELAS = [
+    "São Remo",
+    "Tiradentes",
+    "Marcone",
+    "Pantanal",
+    "Paraisópolis",
+    "Predinhos",
+    "Vila dos Pescadores",
+    "Vila Ede",
+    "Pimentas",
+    "Vitrinni",
+    "Bololo"
+]
+
 intents = discord.Intents.default()
 bot = commands.Bot(command_prefix="!", intents=intents)
+
 
 def carregar_ranking():
     try:
         with open(ARQUIVO, "r", encoding="utf-8") as arquivo:
-            return json.load(arquivo)
+            dados = json.load(arquivo)
+
+        for favela in FAVELAS:
+            dados.setdefault(favela, 0)
+
+        return dados
+
     except:
-        return {}
+        return {favela: 0 for favela in FAVELAS}
+
 
 def salvar_ranking():
     with open(ARQUIVO, "w", encoding="utf-8") as arquivo:
         json.dump(ranking, arquivo, ensure_ascii=False, indent=2)
+
 
 ranking = carregar_ranking()
 
@@ -32,15 +55,9 @@ async def on_ready():
 
 @bot.tree.command(
     name="ranking",
-    description="Mostra o ranking das favelas"
+    description="Mostra o ranking de gastos das favelas"
 )
 async def ranking_comando(interaction: discord.Interaction):
-
-    if not ranking:
-        await interaction.response.send_message(
-            "🏆 Ainda não existem registros no ranking."
-        )
-        return
 
     lista = sorted(
         ranking.items(),
@@ -51,14 +68,14 @@ async def ranking_comando(interaction: discord.Interaction):
     medalhas = ["🥇", "🥈", "🥉"]
     texto = ""
 
-    for posicao, (favela, pontos) in enumerate(lista, start=1):
+    for posicao, (favela, valor) in enumerate(lista, start=1):
 
         if posicao <= 3:
             colocacao = medalhas[posicao - 1]
         else:
             colocacao = f"**{posicao}º**"
 
-        texto += f"{colocacao} **{favela}** — `{pontos}`\n"
+        texto += f"{colocacao} **{favela}** — `${valor:,.0f}`\n"
 
     embed = discord.Embed(
         title="🏆 RANKING — CAMPO BELO",
@@ -69,76 +86,116 @@ async def ranking_comando(interaction: discord.Interaction):
 
 
 @bot.tree.command(
-    name="pontos",
-    description="Consulta os pontos de uma favela"
+    name="adicionargasto",
+    description="Adiciona um valor gasto por uma favela"
 )
 @app_commands.describe(
-    favela="Nome da favela"
-)
-async def consultar_pontos(
-    interaction: discord.Interaction,
-    favela: str
-):
-
-    pontos = ranking.get(favela, 0)
-
-    await interaction.response.send_message(
-        f"📊 **{favela}** possui **{pontos} ponto(s)**."
-    )
-
-
-@bot.tree.command(
-    name="adicionarponto",
-    description="Adiciona 1 ponto para uma favela"
-)
-@app_commands.describe(
-    favela="Nome da favela"
+    favela="Nome da favela",
+    valor="Valor gasto"
 )
 @app_commands.checks.has_permissions(administrator=True)
-async def adicionar_ponto(
+async def adicionar_gasto(
     interaction: discord.Interaction,
-    favela: str
+    favela: str,
+    valor: float
 ):
 
-    ranking[favela] = ranking.get(favela, 0) + 1
+    if favela not in FAVELAS:
+        await interaction.response.send_message(
+            "❌ Essa favela não está cadastrada.",
+            ephemeral=True
+        )
+        return
+
+    if valor <= 0:
+        await interaction.response.send_message(
+            "❌ O valor precisa ser maior que 0.",
+            ephemeral=True
+        )
+        return
+
+    ranking[favela] += valor
     salvar_ranking()
 
     await interaction.response.send_message(
-        f"✅ Registro realizado!\n"
-        f"🏆 **{favela}** recebeu **+1 ponto**.\n"
-        f"📊 Total: **{ranking[favela]}**"
+        f"✅ Gasto registrado!\n"
+        f"🏘️ **{favela}**\n"
+        f"💰 Gasto adicionado: **${valor:,.0f}**\n"
+        f"📊 Total: **${ranking[favela]:,.0f}**"
     )
 
 
 @bot.tree.command(
-    name="removerponto",
-    description="Remove 1 ponto de uma favela"
+    name="gastototal",
+    description="Consulta o total gasto por uma favela"
 )
 @app_commands.describe(
     favela="Nome da favela"
 )
-@app_commands.checks.has_permissions(administrator=True)
-async def remover_ponto(
+async def gasto_total(
     interaction: discord.Interaction,
     favela: str
 ):
+
+    if favela not in FAVELAS:
+        await interaction.response.send_message(
+            "❌ Essa favela não está cadastrada.",
+            ephemeral=True
+        )
+        return
+
+    await interaction.response.send_message(
+        f"📊 **{favela}** já gastou "
+        f"**${ranking[favela]:,.0f}**."
+    )
+
+
+@bot.tree.command(
+    name="removergasto",
+    description="Remove um valor do total gasto"
+)
+@app_commands.describe(
+    favela="Nome da favela",
+    valor="Valor a remover"
+)
+@app_commands.checks.has_permissions(administrator=True)
+async def remover_gasto(
+    interaction: discord.Interaction,
+    favela: str,
+    valor: float
+):
+
+    if favela not in FAVELAS:
+        await interaction.response.send_message(
+            "❌ Essa favela não está cadastrada.",
+            ephemeral=True
+        )
+        return
+
+    if valor <= 0:
+        await interaction.response.send_message(
+            "❌ O valor precisa ser maior que 0.",
+            ephemeral=True
+        )
+        return
 
     ranking[favela] = max(
         0,
-        ranking.get(favela, 0) - 1
+        ranking[favela] - valor
     )
 
     salvar_ranking()
 
     await interaction.response.send_message(
-        f"↩️ **{favela}** ficou com "
-        f"**{ranking[favela]} ponto(s)**."
+        f"↩️ Gasto corrigido!\n"
+        f"🏘️ **{favela}**\n"
+        f"💰 Total agora: **${ranking[favela]:,.0f}**"
     )
 
 
 @bot.tree.command(
     name="zerarranking",
-    description="Zera todo o ranking"
+    description="Zera todos os gastos do ranking"
 )
 @app_commands.checks.has_permissions(administrator=True)
 async def zerar_ranking(
@@ -146,10 +203,14 @@ async def zerar_ranking(
 ):
 
     ranking.clear()
+
+    for favela in FAVELAS:
+        ranking[favela] = 0
+
     salvar_ranking()
 
     await interaction.response.send_message(
-        "⚠️ **Ranking zerado com sucesso!**"
+        "⚠️ **Ranking de gastos zerado com sucesso!**"
     )
 
 
