@@ -6,6 +6,18 @@ from discord import app_commands
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
+# =========================================================
+# WEBHOOKS
+# =========================================================
+
+WEBHOOK_ADICIONAR = "https://discord.com/api/webhooks/1546272715818672218/M2uvS74jTofIkxj_mkR70p-YaiTgYpmUHnYNnDe70NcrJCRoOlGDdinlQRDf7z_5Vt6T"
+WEBHOOK_REMOVER = "https://discord.com/api/webhooks/1546273099987554389/j3yWVi6gLdx8saZKuoQ4L2MHe8BcoBaIHgzeQWSRALVfpBrcuYdX9YXR6uXWFi7ptoDd"
+WEBHOOK_RANKING = "https://discord.com/api/webhooks/1546273377541423124/8M1YJqPtCkcZ-Z9RGfCMrRk0_7xFpufUBUoW5PH-KLGfDbLPstm-c7s8co3LKIUwD1gF"
+
+# =========================================================
+# FAVELAS
+# =========================================================
+
 FAVELAS = [
     "São Remo",
     "Tiradentes",
@@ -19,6 +31,10 @@ FAVELAS = [
     "Vitrinni",
     "Bololo"
 ]
+
+# =========================================================
+# BOT
+# =========================================================
 
 intents = discord.Intents.default()
 intents.guilds = True
@@ -49,6 +65,7 @@ NOMES = {
 
 
 def tem_permissao(interaction, permissao):
+
     if interaction.guild is None:
         return False
 
@@ -62,6 +79,14 @@ def tem_permissao(interaction, permissao):
 
 
 # =========================================================
+# VALORES
+# =========================================================
+
+def dinheiro(valor):
+    return f"R$ {valor:,}".replace(",", ".")
+
+
+# =========================================================
 # RANKING
 # =========================================================
 
@@ -69,11 +94,8 @@ def novo_ranking():
     return {favela: 0 for favela in FAVELAS}
 
 
-def dinheiro(valor):
-    return f"R$ {valor:,}".replace(",", ".")
-
-
 def codificar(dados):
+
     texto = json.dumps(
         dados,
         ensure_ascii=False,
@@ -86,7 +108,9 @@ def codificar(dados):
 
 
 def decodificar(codigo):
+
     try:
+
         texto = base64.urlsafe_b64decode(
             codigo.encode("ascii")
         ).decode("utf-8")
@@ -95,12 +119,14 @@ def decodificar(codigo):
         resultado = novo_ranking()
 
         for favela in FAVELAS:
+
             if favela in dados:
                 resultado[favela] = int(dados[favela])
 
         return resultado
 
-    except Exception:
+    except:
+
         return novo_ranking()
 
 
@@ -166,10 +192,16 @@ def ler_ranking(message):
 
     url = embed.author.url
 
-    if not url or "cbdata=" not in url:
+    if not url:
         return None
 
-    codigo = url.split("cbdata=", 1)[1]
+    if "cbdata=" not in url:
+        return None
+
+    codigo = url.split(
+        "cbdata=",
+        1
+    )[1]
 
     return decodificar(codigo)
 
@@ -181,6 +213,7 @@ async def procurar_ranking():
     if ranking_message:
 
         try:
+
             mensagem = await (
                 ranking_message.channel.fetch_message(
                     ranking_message.id
@@ -188,10 +221,13 @@ async def procurar_ranking():
             )
 
             if ler_ranking(mensagem) is not None:
+
                 ranking_message = mensagem
+
                 return mensagem
 
         except:
+
             ranking_message = None
 
     for guild in bot.guilds:
@@ -210,7 +246,9 @@ async def procurar_ranking():
                     if not mensagem.embeds:
                         continue
 
-                    if mensagem.embeds[0].title != "🏆 RANKING CAMPO BELO":
+                    embed = mensagem.embeds[0]
+
+                    if embed.title != "🏆 RANKING CAMPO BELO":
                         continue
 
                     if ler_ranking(mensagem) is None:
@@ -221,6 +259,7 @@ async def procurar_ranking():
                     return mensagem
 
             except Exception as erro:
+
                 print(
                     f"Erro no canal {channel.name}: {erro}"
                 )
@@ -263,7 +302,504 @@ async def atualizar_ranking(dados):
         )
 
         ranking_message = None
+
         return False
+
+
+# =========================================================
+# LOGS
+# =========================================================
+
+async def enviar_log(url, embed):
+
+    if not url:
+        return
+
+    if url.startswith("COLE_AQUI"):
+        return
+
+    try:
+
+        webhook = discord.Webhook.from_url(
+            url,
+            session=bot.http._HTTPClient__session
+        )
+
+        await webhook.send(
+            embed=embed,
+            username="Campo Belo Logs",
+            wait=False
+        )
+
+    except Exception as erro:
+
+        print(
+            f"❌ Erro enviando log: {erro}"
+        )
+
+
+# =========================================================
+# /CRIARRANKING
+# =========================================================
+
+@tree.command(
+    name="criarranking",
+    description="Cria o ranking das favelas"
+)
+async def criarranking(interaction):
+
+    if not tem_permissao(
+        interaction,
+        "criar"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para criar o ranking.",
+            ephemeral=True
+        )
+
+        return
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    existente = await procurar_ranking()
+
+    if existente:
+
+        await interaction.followup.send(
+            "⚠️ Já existe um ranking.",
+            ephemeral=True
+        )
+
+        return
+
+    global ranking_message
+
+    ranking_message = await interaction.channel.send(
+        embed=criar_embed_ranking(
+            novo_ranking()
+        )
+    )
+
+    # LOG RANKING
+    embed_log = discord.Embed(
+        title="🏆 RANKING CRIADO",
+        color=discord.Color.blue()
+    )
+
+    embed_log.add_field(
+        name="👤 Responsável",
+        value=interaction.user.mention,
+        inline=False
+    )
+
+    embed_log.add_field(
+        name="📍 Canal",
+        value=interaction.channel.mention,
+        inline=False
+    )
+
+    await enviar_log(
+        WEBHOOK_RANKING,
+        embed_log
+    )
+
+    await interaction.followup.send(
+        "✅ Ranking criado!",
+        ephemeral=True
+    )
+
+
+# =========================================================
+# /RANKING
+# =========================================================
+
+@tree.command(
+    name="ranking",
+    description="Mostra o ranking"
+)
+async def ranking(interaction):
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ Ranking não encontrado. Use /criarranking.",
+            ephemeral=True
+        )
+
+        return
+
+    await interaction.followup.send(
+        embed=criar_embed_ranking(dados),
+        ephemeral=True
+    )
+
+
+# =========================================================
+# /ADICIONARGASTO
+# =========================================================
+
+@tree.command(
+    name="adicionargasto",
+    description="Adiciona gasto para uma favela"
+)
+@app_commands.describe(
+    favela="Nome da favela",
+    valor="Valor gasto"
+)
+async def adicionargasto(
+    interaction,
+    favela: str,
+    valor: int
+):
+
+    if not tem_permissao(
+        interaction,
+        "adicionar"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para adicionar gastos.",
+            ephemeral=True
+        )
+
+        return
+
+    if favela not in FAVELAS:
+
+        await interaction.response.send_message(
+            "❌ Favela inválida.",
+            ephemeral=True
+        )
+
+        return
+
+    if valor <= 0:
+
+        await interaction.response.send_message(
+            "❌ O valor precisa ser maior que 0.",
+            ephemeral=True
+        )
+
+        return
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ Ranking não encontrado.",
+            ephemeral=True
+        )
+
+        return
+
+    dados[favela] += valor
+
+    sucesso = await atualizar_ranking(dados)
+
+    if not sucesso:
+
+        await interaction.followup.send(
+            "❌ Não consegui atualizar o ranking.",
+            ephemeral=True
+        )
+
+        return
+
+    # LOG ADICIONAR
+    embed_log = discord.Embed(
+        title="➕ GASTO ADICIONADO",
+        color=discord.Color.green()
+    )
+
+    embed_log.add_field(
+        name="👤 Responsável",
+        value=interaction.user.mention,
+        inline=False
+    )
+
+    embed_log.add_field(
+        name="🏘️ Favela",
+        value=favela,
+        inline=True
+    )
+
+    embed_log.add_field(
+        name="💰 Adicionado",
+        value=f"+{dinheiro(valor)}",
+        inline=True
+    )
+
+    embed_log.add_field(
+        name="📊 Novo total",
+        value=dinheiro(dados[favela]),
+        inline=True
+    )
+
+    await enviar_log(
+        WEBHOOK_ADICIONAR,
+        embed_log
+    )
+
+    await interaction.followup.send(
+        f"✅ **{favela}** recebeu "
+        f"**{dinheiro(valor)}**.\n"
+        f"📊 Total: **{dinheiro(dados[favela])}**",
+        ephemeral=True
+    )
+
+
+# =========================================================
+# /REMOVERGASTO
+# =========================================================
+
+@tree.command(
+    name="removergasto",
+    description="Remove gasto de uma favela"
+)
+@app_commands.describe(
+    favela="Nome da favela",
+    valor="Valor a remover"
+)
+async def removergasto(
+    interaction,
+    favela: str,
+    valor: int
+):
+
+    if not tem_permissao(
+        interaction,
+        "remover"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para remover gastos.",
+            ephemeral=True
+        )
+
+        return
+
+    if favela not in FAVELAS:
+
+        await interaction.response.send_message(
+            "❌ Favela inválida.",
+            ephemeral=True
+        )
+
+        return
+
+    if valor <= 0:
+
+        await interaction.response.send_message(
+            "❌ O valor precisa ser maior que 0.",
+            ephemeral=True
+        )
+
+        return
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ Ranking não encontrado.",
+            ephemeral=True
+        )
+
+        return
+
+    if dados[favela] < valor:
+
+        await interaction.followup.send(
+            f"❌ **{favela}** possui apenas "
+            f"**{dinheiro(dados[favela])}**.",
+            ephemeral=True
+        )
+
+        return
+
+    dados[favela] -= valor
+
+    sucesso = await atualizar_ranking(dados)
+
+    if not sucesso:
+
+        await interaction.followup.send(
+            "❌ Não consegui atualizar.",
+            ephemeral=True
+        )
+
+        return
+
+    # LOG REMOVER
+    embed_log = discord.Embed(
+        title="➖ GASTO REMOVIDO",
+        color=discord.Color.red()
+    )
+
+    embed_log.add_field(
+        name="👤 Responsável",
+        value=interaction.user.mention,
+        inline=False
+    )
+
+    embed_log.add_field(
+        name="🏘️ Favela",
+        value=favela,
+        inline=True
+    )
+
+    embed_log.add_field(
+        name="💰 Removido",
+        value=f"-{dinheiro(valor)}",
+        inline=True
+    )
+
+    embed_log.add_field(
+        name="📊 Novo total",
+        value=dinheiro(dados[favela]),
+        inline=True
+    )
+
+    await enviar_log(
+        WEBHOOK_REMOVER,
+        embed_log
+    )
+
+    await interaction.followup.send(
+        f"✅ Removido **{dinheiro(valor)}** de **{favela}**.\n"
+        f"📊 Total: **{dinheiro(dados[favela])}**",
+        ephemeral=True
+    )
+
+
+# =========================================================
+# /GASTOTOTAL
+# =========================================================
+
+@tree.command(
+    name="gastototal",
+    description="Mostra o total de uma favela"
+)
+@app_commands.describe(
+    favela="Nome da favela"
+)
+async def gastototal(
+    interaction,
+    favela: str
+):
+
+    if favela not in FAVELAS:
+
+        await interaction.response.send_message(
+            "❌ Favela inválida.",
+            ephemeral=True
+        )
+
+        return
+
+    dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.response.send_message(
+            "❌ Ranking não encontrado.",
+            ephemeral=True
+        )
+
+        return
+
+    await interaction.response.send_message(
+        f"🏘️ **{favela}**\n"
+        f"💰 Total gasto: **{dinheiro(dados[favela])}**",
+        ephemeral=True
+    )
+
+
+# =========================================================
+# /ZERARRANKING
+# =========================================================
+
+@tree.command(
+    name="zerarranking",
+    description="Zera todo o ranking"
+)
+async def zerarranking(interaction):
+
+    if not tem_permissao(
+        interaction,
+        "zerar"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para zerar o ranking.",
+            ephemeral=True
+        )
+
+        return
+
+    await interaction.response.defer(
+        ephemeral=True
+    )
+
+    dados = await carregar_ranking()
+
+    if dados is None:
+
+        await interaction.followup.send(
+            "❌ Ranking não encontrado.",
+            ephemeral=True
+        )
+
+        return
+
+    if not await atualizar_ranking(
+        novo_ranking()
+    ):
+
+        await interaction.followup.send(
+            "❌ Não consegui atualizar.",
+            ephemeral=True
+        )
+
+        return
+
+    # LOG RANKING
+    embed_log = discord.Embed(
+        title="🗑️ RANKING ZERADO",
+        description=(
+            f"👤 **Responsável:** "
+            f"{interaction.user.mention}"
+        ),
+        color=discord.Color.red()
+    )
+
+    await enviar_log(
+        WEBHOOK_RANKING,
+        embed_log
+    )
+
+    await interaction.followup.send(
+        "✅ Ranking zerado com sucesso.",
+        ephemeral=True
+    )
 
 
 # =========================================================
@@ -277,25 +813,21 @@ class PermissaoSelect(discord.ui.Select):
         opcoes = [
             discord.SelectOption(
                 label="Adicionar gastos",
-                description="Permite usar /adicionargasto",
                 emoji="➕",
                 value="adicionar"
             ),
             discord.SelectOption(
                 label="Remover gastos",
-                description="Permite usar /removergasto",
                 emoji="➖",
                 value="remover"
             ),
             discord.SelectOption(
                 label="Zerar ranking",
-                description="Permite usar /zerarranking",
                 emoji="🗑️",
                 value="zerar"
             ),
             discord.SelectOption(
                 label="Criar ranking",
-                description="Permite usar /criarranking",
                 emoji="🏆",
                 value="criar"
             )
@@ -311,10 +843,12 @@ class PermissaoSelect(discord.ui.Select):
     async def callback(self, interaction):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
                 "❌ Apenas administradores podem configurar permissões.",
                 ephemeral=True
             )
+
             return
 
         permissao = self.values[0]
@@ -342,15 +876,19 @@ class EscolherCargoSelect(discord.ui.RoleSelect):
     async def callback(self, interaction):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
                 "❌ Apenas administradores podem fazer isso.",
                 ephemeral=True
             )
+
             return
 
         cargo = self.values[0]
 
-        permissoes[self.permissao].add(cargo.id)
+        permissoes[
+            self.permissao
+        ].add(cargo.id)
 
         await interaction.response.send_message(
             "✅ **Permissão adicionada!**\n\n"
@@ -370,10 +908,6 @@ class EscolherCargoView(discord.ui.View):
             EscolherCargoSelect(permissao)
         )
 
-
-# =========================================================
-# REMOVER PERMISSÃO
-# =========================================================
 
 class RemoverPermissaoSelect(discord.ui.Select):
 
@@ -412,16 +946,18 @@ class RemoverPermissaoSelect(discord.ui.Select):
     async def callback(self, interaction):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
                 "❌ Apenas administradores podem configurar permissões.",
                 ephemeral=True
             )
+
             return
 
         permissao = self.values[0]
 
         await interaction.response.send_message(
-            "🗑️ Escolha o cargo que perderá a permissão:",
+            "🗑️ Escolha o cargo:",
             view=RemoverCargoView(permissao),
             ephemeral=True
         )
@@ -442,15 +978,19 @@ class RemoverCargoSelect(discord.ui.RoleSelect):
     async def callback(self, interaction):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
                 "❌ Apenas administradores podem fazer isso.",
                 ephemeral=True
             )
+
             return
 
         cargo = self.values[0]
 
-        permissoes[self.permissao].discard(cargo.id)
+        permissoes[
+            self.permissao
+        ].discard(cargo.id)
 
         await interaction.response.send_message(
             "✅ **Permissão removida!**\n\n"
@@ -471,11 +1011,7 @@ class RemoverCargoView(discord.ui.View):
         )
 
 
-# =========================================================
-# LISTAR PERMISSÕES
-# =========================================================
-
-async def lista_permissoes(guild):
+async def mostrar_permissoes(guild):
 
     texto = ""
 
@@ -493,21 +1029,20 @@ async def lista_permissoes(guild):
                 validos.append(cargo.mention)
 
         if validos:
+
             texto += "\n".join(
                 f"• {cargo}"
                 for cargo in validos
             )
+
         else:
+
             texto += "• Nenhum cargo configurado."
 
         texto += "\n"
 
     return texto
 
-
-# =========================================================
-# PAINEL PRINCIPAL
-# =========================================================
 
 class PainelPermissoesView(discord.ui.View):
 
@@ -519,15 +1054,17 @@ class PainelPermissoesView(discord.ui.View):
         label="Adicionar permissão",
         emoji="➕",
         style=discord.ButtonStyle.success,
-        custom_id="cb_perm_add"
+        custom_id="campo_belo_perm_add"
     )
     async def adicionar(self, interaction, button):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
-                "❌ Apenas administradores podem usar este painel.",
+                "❌ Apenas administradores.",
                 ephemeral=True
             )
+
             return
 
         await interaction.response.send_message(
@@ -540,15 +1077,17 @@ class PainelPermissoesView(discord.ui.View):
         label="Remover permissão",
         emoji="➖",
         style=discord.ButtonStyle.danger,
-        custom_id="cb_perm_remove"
+        custom_id="campo_belo_perm_remove"
     )
     async def remover(self, interaction, button):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
-                "❌ Apenas administradores podem usar este painel.",
+                "❌ Apenas administradores.",
                 ephemeral=True
             )
+
             return
 
         await interaction.response.send_message(
@@ -561,18 +1100,20 @@ class PainelPermissoesView(discord.ui.View):
         label="Ver permissões",
         emoji="📋",
         style=discord.ButtonStyle.primary,
-        custom_id="cb_perm_view"
+        custom_id="campo_belo_perm_view"
     )
     async def ver(self, interaction, button):
 
         if not interaction.user.guild_permissions.administrator:
+
             await interaction.response.send_message(
-                "❌ Apenas administradores podem usar este painel.",
+                "❌ Apenas administradores.",
                 ephemeral=True
             )
+
             return
 
-        texto = await lista_permissoes(
+        texto = await mostrar_permissoes(
             interaction.guild
         )
 
@@ -636,11 +1177,11 @@ async def painelpermissoes(interaction):
     embed = discord.Embed(
         title="⚙️ CONFIGURAÇÃO DE PERMISSÕES",
         description=(
-            "Configure quais cargos podem controlar o ranking.\n\n"
+            "Configure os cargos que podem controlar o ranking.\n\n"
             "➕ **Adicionar permissão**\n"
             "Libera uma função para um cargo.\n\n"
             "➖ **Remover permissão**\n"
-            "Remove uma função de um cargo.\n\n"
+            "Retira uma função de um cargo.\n\n"
             "📋 **Ver permissões**\n"
             "Mostra os cargos configurados."
         ),
@@ -654,343 +1195,6 @@ async def painelpermissoes(interaction):
 
     await interaction.response.send_message(
         "✅ Painel criado!",
-        ephemeral=True
-    )
-
-
-# =========================================================
-# /CRIARRANKING
-# =========================================================
-
-@tree.command(
-    name="criarranking",
-    description="Cria o ranking das favelas"
-)
-async def criarranking(interaction):
-
-    if not tem_permissao(interaction, "criar"):
-
-        await interaction.response.send_message(
-            "❌ Você não tem permissão para criar o ranking.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.response.defer(
-        ephemeral=True
-    )
-
-    existente = await procurar_ranking()
-
-    if existente:
-
-        await interaction.followup.send(
-            "⚠️ Já existe um ranking.",
-            ephemeral=True
-        )
-
-        return
-
-    global ranking_message
-
-    ranking_message = await interaction.channel.send(
-        embed=criar_embed_ranking(
-            novo_ranking()
-        )
-    )
-
-    await interaction.followup.send(
-        "✅ Ranking criado!",
-        ephemeral=True
-    )
-
-
-# =========================================================
-# /RANKING
-# =========================================================
-
-@tree.command(
-    name="ranking",
-    description="Mostra o ranking"
-)
-async def ranking(interaction):
-
-    await interaction.response.defer(
-        ephemeral=True
-    )
-
-    dados = await carregar_ranking()
-
-    if dados is None:
-
-        await interaction.followup.send(
-            "❌ Ranking não encontrado. Use /criarranking.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.followup.send(
-        embed=criar_embed_ranking(dados),
-        ephemeral=True
-    )
-
-
-# =========================================================
-# /ADICIONARGASTO
-# =========================================================
-
-@tree.command(
-    name="adicionargasto",
-    description="Adiciona dinheiro ao total de uma favela"
-)
-@app_commands.describe(
-    favela="Nome da favela",
-    valor="Valor a adicionar"
-)
-async def adicionargasto(
-    interaction,
-    favela: str,
-    valor: int
-):
-
-    if not tem_permissao(interaction, "adicionar"):
-
-        await interaction.response.send_message(
-            "❌ Você não tem permissão para adicionar gastos.",
-            ephemeral=True
-        )
-
-        return
-
-    if favela not in FAVELAS:
-
-        await interaction.response.send_message(
-            "❌ Favela inválida.",
-            ephemeral=True
-        )
-
-        return
-
-    if valor <= 0:
-
-        await interaction.response.send_message(
-            "❌ O valor precisa ser maior que 0.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.response.defer(
-        ephemeral=True
-    )
-
-    dados = await carregar_ranking()
-
-    if dados is None:
-
-        await interaction.followup.send(
-            "❌ Ranking não encontrado.",
-            ephemeral=True
-        )
-
-        return
-
-    dados[favela] += valor
-
-    if not await atualizar_ranking(dados):
-
-        await interaction.followup.send(
-            "❌ Não consegui atualizar o ranking.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.followup.send(
-        f"✅ **{favela}** recebeu **{dinheiro(valor)}**.\n"
-        f"💰 Total: **{dinheiro(dados[favela])}**",
-        ephemeral=True
-    )
-
-
-# =========================================================
-# /REMOVERGASTO
-# =========================================================
-
-@tree.command(
-    name="removergasto",
-    description="Remove dinheiro do total de uma favela"
-)
-@app_commands.describe(
-    favela="Nome da favela",
-    valor="Valor a remover"
-)
-async def removergasto(
-    interaction,
-    favela: str,
-    valor: int
-):
-
-    if not tem_permissao(interaction, "remover"):
-
-        await interaction.response.send_message(
-            "❌ Você não tem permissão para remover gastos.",
-            ephemeral=True
-        )
-
-        return
-
-    if favela not in FAVELAS:
-
-        await interaction.response.send_message(
-            "❌ Favela inválida.",
-            ephemeral=True
-        )
-
-        return
-
-    if valor <= 0:
-
-        await interaction.response.send_message(
-            "❌ O valor precisa ser maior que 0.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.response.defer(
-        ephemeral=True
-    )
-
-    dados = await carregar_ranking()
-
-    if dados is None:
-
-        await interaction.followup.send(
-            "❌ Ranking não encontrado.",
-            ephemeral=True
-        )
-
-        return
-
-    if dados[favela] < valor:
-
-        await interaction.followup.send(
-            f"❌ **{favela}** possui apenas "
-            f"**{dinheiro(dados[favela])}**.",
-            ephemeral=True
-        )
-
-        return
-
-    dados[favela] -= valor
-
-    if not await atualizar_ranking(dados):
-
-        await interaction.followup.send(
-            "❌ Não consegui atualizar.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.followup.send(
-        f"✅ Removido **{dinheiro(valor)}** de **{favela}**.\n"
-        f"💰 Total: **{dinheiro(dados[favela])}**",
-        ephemeral=True
-    )
-
-
-# =========================================================
-# /GASTOTOTAL
-# =========================================================
-
-@tree.command(
-    name="gastototal",
-    description="Mostra o total de uma favela"
-)
-@app_commands.describe(
-    favela="Nome da favela"
-)
-async def gastototal(
-    interaction,
-    favela: str
-):
-
-    if favela not in FAVELAS:
-
-        await interaction.response.send_message(
-            "❌ Favela inválida.",
-            ephemeral=True
-        )
-
-        return
-
-    dados = await carregar_ranking()
-
-    if dados is None:
-
-        await interaction.response.send_message(
-            "❌ Ranking não encontrado.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.response.send_message(
-        f"🏘️ **{favela}**\n"
-        f"💰 Total gasto: **{dinheiro(dados[favela])}**",
-        ephemeral=True
-    )
-
-
-# =========================================================
-# /ZERARRANKING
-# =========================================================
-
-@tree.command(
-    name="zerarranking",
-    description="Zera todo o ranking"
-)
-async def zerarranking(interaction):
-
-    if not tem_permissao(interaction, "zerar"):
-
-        await interaction.response.send_message(
-            "❌ Você não tem permissão para zerar o ranking.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.response.defer(
-        ephemeral=True
-    )
-
-    if await carregar_ranking() is None:
-
-        await interaction.followup.send(
-            "❌ Ranking não encontrado.",
-            ephemeral=True
-        )
-
-        return
-
-    if not await atualizar_ranking(
-        novo_ranking()
-    ):
-
-        await interaction.followup.send(
-            "❌ Não consegui atualizar.",
-            ephemeral=True
-        )
-
-        return
-
-    await interaction.followup.send(
-        "✅ Ranking zerado com sucesso.",
         ephemeral=True
     )
 
@@ -1034,17 +1238,23 @@ async def on_app_command_error(
 @bot.event
 async def on_ready():
 
-    print(f"🤖 Bot online: {bot.user}")
+    print(
+        f"🤖 Bot online: {bot.user}"
+    )
 
     try:
 
         await tree.sync()
 
-        print("✅ Comandos sincronizados.")
+        print(
+            "✅ Comandos sincronizados."
+        )
 
     except Exception as erro:
 
-        print(f"❌ Erro sincronizando: {erro}")
+        print(
+            f"❌ Erro sincronizando comandos: {erro}"
+        )
 
     try:
 
@@ -1057,7 +1267,9 @@ async def on_ready():
 
     except Exception as erro:
 
-        print(f"❌ Erro procurando ranking: {erro}")
+        print(
+            f"❌ Erro procurando ranking: {erro}"
+        )
 
 
 # =========================================================
@@ -1065,6 +1277,7 @@ async def on_ready():
 # =========================================================
 
 if not TOKEN:
+
     raise RuntimeError(
         "DISCORD_TOKEN não foi configurado."
     )
