@@ -10,12 +10,9 @@ from discord import app_commands
 
 TOKEN = os.getenv("DISCORD_TOKEN")
 
-# COLE OS WEBHOOKS DIRETAMENTE NO TEMALIX
 WEBHOOK_ADICIONAR = "https://discord.com/api/webhooks/1546272715818672218/M2uvS74jTofIkxj_mkR70p-YaiTgYpmUHnYNnDe70NcrJCRoOlGDdinlQRDf7z_5Vt6T"
 WEBHOOK_REMOVER = "https://discord.com/api/webhooks/1546273099987554389/j3yWVi6gLdx8saZKuoQ4L2MHe8BcoBaIHgzeQWSRALVfpBrcuYdX9YXR6uXWFi7ptoDd"
 WEBHOOK_RANKING = "https://discord.com/api/webhooks/1546273377541423124/8M1YJqPtCkcZ-Z9RGfCMrRk0_7xFpufUBUoW5PH-KLGfDbLPstm-c7s8co3LKIUwD1gF"
-WEBHOOK_ENCOMENDAS = "https://discord.com/api/webhooks/1546309841700528218/PnoBJc75hdTK9Oz6VlizYxGgulmSOpyjT_OIlNREqBuPuCF8Y0RYakYRTZLN_Ho4s-9r"
-
 
 # =========================================================
 # FAVELAS
@@ -35,20 +32,6 @@ FAVELAS = [
     "Bololo"
 ]
 
-
-# =========================================================
-# PRODUTOS PERMITIDOS
-# =========================================================
-
-PRODUTOS = {
-    "Reparo básico": 10000,
-    "Colete de proteção": 3000,
-    "Lockpick de cobre": 9000,
-    "Micha": 6000,
-    "Jammer": 3000
-}
-
-
 # =========================================================
 # BOT
 # =========================================================
@@ -62,9 +45,23 @@ tree = app_commands.CommandTree(bot)
 
 ranking_message = None
 
-# Carrinhos temporários
-carrinhos = {}
+# =========================================================
+# PERMISSÕES
+# =========================================================
 
+permissoes_cargos = {
+    "adicionar": set(),
+    "remover": set(),
+    "zerar": set(),
+    "criar_ranking": set()
+}
+
+NOMES_PERMISSOES = {
+    "adicionar": "➕ Adicionar gastos",
+    "remover": "➖ Remover gastos",
+    "zerar": "🗑️ Zerar ranking",
+    "criar_ranking": "🏆 Criar ranking"
+}
 
 # =========================================================
 # UTILIDADES
@@ -72,6 +69,19 @@ carrinhos = {}
 
 def dinheiro(valor):
     return f"R$ {valor:,}".replace(",", ".")
+
+
+def possui_permissao(interaction, permissao):
+    if interaction.guild is None:
+        return False
+
+    if interaction.user.guild_permissions.administrator:
+        return True
+
+    return any(
+        cargo.id in permissoes_cargos[permissao]
+        for cargo in interaction.user.roles
+    )
 
 
 # =========================================================
@@ -86,7 +96,6 @@ def novo_ranking():
 
 
 def codificar_dados(dados):
-
     texto = json.dumps(
         dados,
         ensure_ascii=False,
@@ -99,9 +108,7 @@ def codificar_dados(dados):
 
 
 def decodificar_dados(codificado):
-
     try:
-
         texto = base64.urlsafe_b64decode(
             codificado.encode("ascii")
         ).decode("utf-8")
@@ -111,26 +118,17 @@ def decodificar_dados(codificado):
         resultado = novo_ranking()
 
         for favela in FAVELAS:
-
             if favela in dados:
-
-                resultado[favela] = int(
-                    dados[favela]
-                )
+                resultado[favela] = int(dados[favela])
 
         return resultado
 
     except Exception as erro:
-
-        print(
-            f"Erro decodificando ranking: {erro}"
-        )
-
+        print(f"Erro decodificando ranking: {erro}")
         return novo_ranking()
 
 
 def criar_embed_ranking(dados):
-
     ordenado = sorted(
         dados.items(),
         key=lambda item: item[1],
@@ -143,16 +141,12 @@ def criar_embed_ranking(dados):
         ordenado,
         start=1
     ):
-
         if posicao == 1:
             prefixo = "🥇"
-
         elif posicao == 2:
             prefixo = "🥈"
-
         elif posicao == 3:
             prefixo = "🥉"
-
         else:
             prefixo = f"**{posicao}º**"
 
@@ -167,9 +161,7 @@ def criar_embed_ranking(dados):
         color=discord.Color.gold()
     )
 
-    dados_codificados = codificar_dados(
-        dados
-    )
+    dados_codificados = codificar_dados(dados)
 
     embed.set_author(
         name="Campo Belo",
@@ -187,7 +179,6 @@ def criar_embed_ranking(dados):
 
 
 def ler_dados_ranking(message):
-
     if not message.embeds:
         return None
 
@@ -209,38 +200,27 @@ def ler_dados_ranking(message):
         1
     )[1]
 
-    return decodificar_dados(
-        codificado
-    )
+    return decodificar_dados(codificado)
 
 
 async def procurar_ranking():
-
     global ranking_message
 
     if ranking_message:
-
         try:
-
             mensagem = await (
-                ranking_message.channel
-                .fetch_message(
+                ranking_message.channel.fetch_message(
                     ranking_message.id
                 )
             )
 
-            dados = ler_dados_ranking(
-                mensagem
-            )
+            dados = ler_dados_ranking(mensagem)
 
             if dados is not None:
-
                 ranking_message = mensagem
-
                 return mensagem
 
         except Exception:
-
             ranking_message = None
 
     for guild in bot.guilds:
@@ -248,7 +228,6 @@ async def procurar_ranking():
         for channel in guild.text_channels:
 
             try:
-
                 async for message in channel.history(
                     limit=100
                 ):
@@ -264,15 +243,10 @@ async def procurar_ranking():
 
                     embed = message.embeds[0]
 
-                    if (
-                        embed.title
-                        != "🏆 RANKING CAMPO BELO"
-                    ):
+                    if embed.title != "🏆 RANKING CAMPO BELO":
                         continue
 
-                    dados = ler_dados_ranking(
-                        message
-                    )
+                    dados = ler_dados_ranking(message)
 
                     if dados is None:
                         continue
@@ -282,7 +256,6 @@ async def procurar_ranking():
                     return message
 
             except Exception as erro:
-
                 print(
                     f"Erro no canal "
                     f"{channel.name}: {erro}"
@@ -292,42 +265,31 @@ async def procurar_ranking():
 
 
 async def carregar_ranking():
-
     mensagem = await procurar_ranking()
 
     if mensagem is None:
         return None
 
-    return ler_dados_ranking(
-        mensagem
-    )
+    return ler_dados_ranking(mensagem)
 
 
 async def atualizar_ranking(dados):
-
     global ranking_message
 
     if ranking_message is None:
-
-        ranking_message = (
-            await procurar_ranking()
-        )
+        ranking_message = await procurar_ranking()
 
     if ranking_message is None:
         return False
 
     try:
-
         await ranking_message.edit(
-            embed=criar_embed_ranking(
-                dados
-            )
+            embed=criar_embed_ranking(dados)
         )
 
         return True
 
     except Exception as erro:
-
         print(
             f"Erro atualizando ranking: {erro}"
         )
@@ -338,13 +300,10 @@ async def atualizar_ranking(dados):
 
 
 # =========================================================
-# WEBHOOKS
+# WEBHOOK
 # =========================================================
 
-async def enviar_webhook(
-    url,
-    embed
-):
+async def enviar_webhook(url, embed):
 
     if not url:
         return
@@ -353,7 +312,6 @@ async def enviar_webhook(
         return
 
     try:
-
         webhook = discord.Webhook.from_url(
             url,
             session=bot.http._HTTPClient__session
@@ -366,437 +324,276 @@ async def enviar_webhook(
         )
 
     except Exception as erro:
-
         print(
             f"Erro no webhook: {erro}"
         )
 
 
 # =========================================================
-# CARRINHO
+# PAINEL DE PERMISSÕES
 # =========================================================
 
-def calcular_total(carrinho):
-
-    total = 0
-
-    for produto, quantidade in carrinho.items():
-
-        preco = PRODUTOS.get(
-            produto,
-            0
-        )
-
-        total += preco * quantidade
-
-    return total
-
-
-def texto_carrinho(carrinho):
-
-    if not carrinho:
-
-        return "🛒 **Carrinho vazio.**"
-
-    linhas = []
-
-    for produto, quantidade in carrinho.items():
-
-        preco = PRODUTOS[produto]
-
-        subtotal = (
-            preco * quantidade
-        )
-
-        linhas.append(
-            f"• **{produto}** × `{quantidade}` "
-            f"= **{dinheiro(subtotal)}**"
-        )
-
-    total = calcular_total(
-        carrinho
-    )
-
-    return (
-        "\n".join(linhas)
-        + "\n\n"
-        + f"💰 **TOTAL: {dinheiro(total)}**"
-    )
-
-
-# =========================================================
-# MODAL DE QUANTIDADE
-# =========================================================
-
-class QuantidadeModal(
-    discord.ui.Modal
-):
-
-    quantidade = discord.ui.TextInput(
-        label="Quantidade",
-        placeholder="Digite somente a quantidade",
-        min_length=1,
-        max_length=6
-    )
-
-    def __init__(
-        self,
-        produto
-    ):
-
-        super().__init__(
-            title=f"Quantidade - {produto}"
-        )
-
-        self.produto = produto
-
-    async def on_submit(
-        self,
-        interaction
-    ):
-
-        try:
-
-            quantidade = int(
-                self.quantidade.value
-            )
-
-        except ValueError:
-
-            await interaction.response.send_message(
-                "❌ Digite somente números.",
-                ephemeral=True
-            )
-
-            return
-
-        if quantidade <= 0:
-
-            await interaction.response.send_message(
-                "❌ A quantidade precisa ser maior que 0.",
-                ephemeral=True
-            )
-
-            return
-
-        usuario_id = interaction.user.id
-
-        if usuario_id not in carrinhos:
-
-            carrinhos[usuario_id] = {}
-
-        carrinhos[
-            usuario_id
-        ][self.produto] = (
-            carrinhos[usuario_id].get(
-                self.produto,
-                0
-            ) + quantidade
-        )
-
-        await interaction.response.send_message(
-            "✅ Item adicionado ao carrinho.\n\n"
-            + texto_carrinho(
-                carrinhos[usuario_id]
-            ),
-            ephemeral=True
-        )
-
-
-# =========================================================
-# SELECT DE PRODUTO
-# =========================================================
-
-class ProdutoSelect(
-    discord.ui.Select
-):
+class PermissaoSelect(discord.ui.Select):
 
     def __init__(self):
 
-        opcoes = []
-
-        for nome, preco in PRODUTOS.items():
-
-            opcoes.append(
-                discord.SelectOption(
-                    label=nome,
-                    description=(
-                        f"Valor: "
-                        f"{dinheiro(preco)}"
-                    ),
-                    value=nome
-                )
+        opcoes = [
+            discord.SelectOption(
+                label="Adicionar gastos",
+                description="Permite usar /adicionargasto",
+                emoji="➕",
+                value="adicionar"
+            ),
+            discord.SelectOption(
+                label="Remover gastos",
+                description="Permite usar /removergasto",
+                emoji="➖",
+                value="remover"
+            ),
+            discord.SelectOption(
+                label="Zerar ranking",
+                description="Permite usar /zerarranking",
+                emoji="🗑️",
+                value="zerar"
+            ),
+            discord.SelectOption(
+                label="Criar ranking",
+                description="Permite usar /criarranking",
+                emoji="🏆",
+                value="criar_ranking"
             )
+        ]
 
         super().__init__(
-            placeholder="📦 Escolha um item",
+            placeholder="🔐 Escolha uma permissão",
             min_values=1,
             max_values=1,
             options=opcoes
         )
 
-    async def callback(
-        self,
-        interaction
-    ):
+    async def callback(self, interaction):
 
-        produto = self.values[0]
-
-        await interaction.response.send_modal(
-            QuantidadeModal(produto)
-        )
-
-
-class ProdutoView(
-    discord.ui.View
-):
-
-    def __init__(self):
-
-        super().__init__(
-            timeout=120
-        )
-
-        self.add_item(
-            ProdutoSelect()
-        )
-
-
-# =========================================================
-# ALTERAR QUANTIDADE
-# =========================================================
-
-class AlterarModal(
-    discord.ui.Modal
-):
-
-    quantidade = discord.ui.TextInput(
-        label="Nova quantidade",
-        placeholder="Digite a nova quantidade",
-        min_length=1,
-        max_length=6
-    )
-
-    def __init__(
-        self,
-        produto
-    ):
-
-        super().__init__(
-            title=f"Alterar - {produto}"
-        )
-
-        self.produto = produto
-
-    async def on_submit(
-        self,
-        interaction
-    ):
-
-        try:
-
-            quantidade = int(
-                self.quantidade.value
-            )
-
-        except ValueError:
-
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ Digite somente números.",
+                "❌ Apenas administradores podem configurar permissões.",
                 ephemeral=True
             )
-
             return
 
-        if quantidade <= 0:
-
-            await interaction.response.send_message(
-                "❌ A quantidade precisa ser maior que 0.",
-                ephemeral=True
-            )
-
-            return
-
-        usuario_id = interaction.user.id
-
-        if usuario_id not in carrinhos:
-
-            carrinhos[usuario_id] = {}
-
-        carrinhos[
-            usuario_id
-        ][self.produto] = quantidade
+        permissao = self.values[0]
 
         await interaction.response.send_message(
-            "✅ Quantidade alterada.\n\n"
-            + texto_carrinho(
-                carrinhos[usuario_id]
-            ),
+            f"🔐 Permissão selecionada:\n"
+            f"**{NOMES_PERMISSOES[permissao]}**\n\n"
+            "Agora escolha o cargo:",
+            view=EscolherCargoView(permissao),
             ephemeral=True
         )
 
 
-class AlterarSelect(
-    discord.ui.Select
-):
+class EscolherCargoSelect(discord.ui.RoleSelect):
 
-    def __init__(
-        self,
-        carrinho
-    ):
-
-        opcoes = []
-
-        for produto, quantidade in carrinho.items():
-
-            opcoes.append(
-                discord.SelectOption(
-                    label=produto[:100],
-                    description=(
-                        f"Atual: {quantidade}"
-                    ),
-                    value=produto
-                )
-            )
+    def __init__(self, permissao):
 
         super().__init__(
-            placeholder="✏️ Escolha o item",
+            placeholder="👤 Escolha um cargo",
+            min_values=1,
+            max_values=1
+        )
+
+        self.permissao = permissao
+
+    async def callback(self, interaction):
+
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ Apenas administradores podem fazer isso.",
+                ephemeral=True
+            )
+            return
+
+        cargo = self.values[0]
+
+        permissoes_cargos[
+            self.permissao
+        ].add(cargo.id)
+
+        await interaction.response.send_message(
+            "✅ **Permissão adicionada!**\n\n"
+            f"👤 Cargo: {cargo.mention}\n"
+            f"🔐 Permissão: "
+            f"**{NOMES_PERMISSOES[self.permissao]}**",
+            ephemeral=True
+        )
+
+
+class EscolherCargoView(discord.ui.View):
+
+    def __init__(self, permissao):
+
+        super().__init__(timeout=120)
+
+        self.add_item(
+            EscolherCargoSelect(permissao)
+        )
+
+
+# =========================================================
+# REMOVER PERMISSÃO
+# =========================================================
+
+class RemoverPermissaoSelect(discord.ui.Select):
+
+    def __init__(self):
+
+        opcoes = [
+            discord.SelectOption(
+                label="Adicionar gastos",
+                emoji="➕",
+                value="adicionar"
+            ),
+            discord.SelectOption(
+                label="Remover gastos",
+                emoji="➖",
+                value="remover"
+            ),
+            discord.SelectOption(
+                label="Zerar ranking",
+                emoji="🗑️",
+                value="zerar"
+            ),
+            discord.SelectOption(
+                label="Criar ranking",
+                emoji="🏆",
+                value="criar_ranking"
+            )
+        ]
+
+        super().__init__(
+            placeholder="🗑️ Escolha a permissão",
             min_values=1,
             max_values=1,
             options=opcoes
         )
 
-    async def callback(
-        self,
-        interaction
-    ):
+    async def callback(self, interaction):
 
-        produto = self.values[0]
-
-        await interaction.response.send_modal(
-            AlterarModal(produto)
-        )
-
-
-class AlterarView(
-    discord.ui.View
-):
-
-    def __init__(
-        self,
-        carrinho
-    ):
-
-        super().__init__(
-            timeout=120
-        )
-
-        self.add_item(
-            AlterarSelect(carrinho)
-        )
-
-
-# =========================================================
-# REMOVER ITEM
-# =========================================================
-
-class RemoverSelect(
-    discord.ui.Select
-):
-
-    def __init__(
-        self,
-        carrinho
-    ):
-
-        opcoes = []
-
-        for produto, quantidade in carrinho.items():
-
-            opcoes.append(
-                discord.SelectOption(
-                    label=produto[:100],
-                    description=(
-                        f"Quantidade: {quantidade}"
-                    ),
-                    value=produto
-                )
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ Apenas administradores podem configurar permissões.",
+                ephemeral=True
             )
+            return
 
-        super().__init__(
-            placeholder="🗑️ Escolha o item",
-            min_values=1,
-            max_values=1,
-            options=opcoes
-        )
-
-    async def callback(
-        self,
-        interaction
-    ):
-
-        produto = self.values[0]
-
-        usuario_id = interaction.user.id
-
-        if usuario_id in carrinhos:
-
-            carrinhos[
-                usuario_id
-            ].pop(
-                produto,
-                None
-            )
+        permissao = self.values[0]
 
         await interaction.response.send_message(
-            "🗑️ Item removido.\n\n"
-            + texto_carrinho(
-                carrinhos.get(
-                    usuario_id,
-                    {}
-                )
-            ),
+            "🗑️ Escolha o cargo que perderá a permissão:",
+            view=RemoverCargoView(permissao),
             ephemeral=True
         )
 
 
-class RemoverView(
-    discord.ui.View
-):
+class RemoverCargoSelect(discord.ui.RoleSelect):
 
-    def __init__(
-        self,
-        carrinho
-    ):
+    def __init__(self, permissao):
 
         super().__init__(
-            timeout=120
+            placeholder="👤 Escolha um cargo",
+            min_values=1,
+            max_values=1
         )
+
+        self.permissao = permissao
+
+    async def callback(self, interaction):
+
+        if not interaction.user.guild_permissions.administrator:
+            await interaction.response.send_message(
+                "❌ Apenas administradores podem fazer isso.",
+                ephemeral=True
+            )
+            return
+
+        cargo = self.values[0]
+
+        permissoes_cargos[
+            self.permissao
+        ].discard(cargo.id)
+
+        await interaction.response.send_message(
+            "✅ **Permissão removida!**\n\n"
+            f"👤 Cargo: {cargo.mention}\n"
+            f"🔐 Permissão: "
+            f"**{NOMES_PERMISSOES[self.permissao]}**",
+            ephemeral=True
+        )
+
+
+class RemoverCargoView(discord.ui.View):
+
+    def __init__(self, permissao):
+
+        super().__init__(timeout=120)
 
         self.add_item(
-            RemoverSelect(carrinho)
+            RemoverCargoSelect(permissao)
         )
 
 
 # =========================================================
-# VIEW DO TICKET
+# VER PERMISSÕES
 # =========================================================
 
-class EncomendaView(
-    discord.ui.View
-):
+async def criar_lista_permissoes(guild):
+
+    texto = ""
+
+    for permissao, cargos in permissoes_cargos.items():
+
+        texto += (
+            f"\n{NOMES_PERMISSOES[permissao]}\n"
+        )
+
+        cargos_validos = []
+
+        for cargo_id in cargos:
+
+            cargo = guild.get_role(cargo_id)
+
+            if cargo:
+                cargos_validos.append(
+                    cargo.mention
+                )
+
+        if cargos_validos:
+            texto += "\n".join(
+                f"• {cargo}"
+                for cargo in cargos_validos
+            )
+        else:
+            texto += "• Nenhum cargo configurado."
+
+        texto += "\n"
+
+    return texto
+
+
+# =========================================================
+# PAINEL PRINCIPAL DE PERMISSÕES
+# =========================================================
+
+class PainelPermissoesView(discord.ui.View):
 
     def __init__(self):
 
-        super().__init__(
-            timeout=None
-        )
+        super().__init__(timeout=None)
 
     @discord.ui.button(
-        label="Adicionar item",
+        label="Adicionar permissão",
         emoji="➕",
         style=discord.ButtonStyle.success,
-        custom_id="cb_adicionar_item"
+        custom_id="cb_permissao_adicionar"
     )
     async def adicionar(
         self,
@@ -804,49 +601,24 @@ class EncomendaView(
         button
     ):
 
-        await interaction.response.send_message(
-            "📦 Escolha o item:",
-            view=ProdutoView(),
-            ephemeral=True
-        )
-
-    @discord.ui.button(
-        label="Alterar quantidade",
-        emoji="✏️",
-        style=discord.ButtonStyle.primary,
-        custom_id="cb_alterar_quantidade"
-    )
-    async def alterar(
-        self,
-        interaction,
-        button
-    ):
-
-        carrinho = carrinhos.get(
-            interaction.user.id,
-            {}
-        )
-
-        if not carrinho:
-
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ Seu carrinho está vazio.",
+                "❌ Apenas administradores podem usar este painel.",
                 ephemeral=True
             )
-
             return
 
         await interaction.response.send_message(
-            "✏️ Escolha o item:",
-            view=AlterarView(carrinho),
+            "🔐 Escolha qual permissão deseja liberar:",
+            view=PermissaoView(),
             ephemeral=True
         )
 
     @discord.ui.button(
-        label="Remover item",
-        emoji="🗑️",
+        label="Remover permissão",
+        emoji="➖",
         style=discord.ButtonStyle.danger,
-        custom_id="cb_remover_item"
+        custom_id="cb_permissao_remover"
     )
     async def remover(
         self,
@@ -854,31 +626,24 @@ class EncomendaView(
         button
     ):
 
-        carrinho = carrinhos.get(
-            interaction.user.id,
-            {}
-        )
-
-        if not carrinho:
-
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ Seu carrinho está vazio.",
+                "❌ Apenas administradores podem usar este painel.",
                 ephemeral=True
             )
-
             return
 
         await interaction.response.send_message(
-            "🗑️ Escolha o item:",
-            view=RemoverView(carrinho),
+            "🗑️ Escolha qual permissão deseja remover:",
+            view=RemoverPermissaoView(),
             ephemeral=True
         )
 
     @discord.ui.button(
-        label="Ver encomenda",
+        label="Ver permissões",
         emoji="📋",
-        style=discord.ButtonStyle.secondary,
-        custom_id="cb_ver_encomenda"
+        style=discord.ButtonStyle.primary,
+        custom_id="cb_permissao_ver"
     )
     async def ver(
         self,
@@ -886,269 +651,98 @@ class EncomendaView(
         button
     ):
 
-        carrinho = carrinhos.get(
-            interaction.user.id,
-            {}
-        )
-
-        await interaction.response.send_message(
-            texto_carrinho(carrinho),
-            ephemeral=True
-        )
-
-    @discord.ui.button(
-        label="Finalizar",
-        emoji="✅",
-        style=discord.ButtonStyle.success,
-        custom_id="cb_finalizar_encomenda"
-    )
-    async def finalizar(
-        self,
-        interaction,
-        button
-    ):
-
-        usuario_id = interaction.user.id
-
-        carrinho = carrinhos.get(
-            usuario_id,
-            {}
-        )
-
-        if not carrinho:
-
+        if not interaction.user.guild_permissions.administrator:
             await interaction.response.send_message(
-                "❌ O carrinho está vazio.",
+                "❌ Apenas administradores podem usar este painel.",
                 ephemeral=True
             )
-
             return
 
-        total = calcular_total(
-            carrinho
-        )
-
-        resumo = texto_carrinho(
-            carrinho
+        texto = await criar_lista_permissoes(
+            interaction.guild
         )
 
         embed = discord.Embed(
-            title="📦 NOVA ENCOMENDA",
-            description=(
-                f"👤 **Cliente:** "
-                f"{interaction.user.mention}\n\n"
-                f"{resumo}"
-            ),
-            color=discord.Color.green()
-        )
-
-        embed.set_footer(
-            text=f"ID do cliente: {usuario_id}"
-        )
-
-        await enviar_webhook(
-            WEBHOOK_ENCOMENDAS,
-            embed
-        )
-
-        carrinhos.pop(
-            usuario_id,
-            None
-        )
-
-        await interaction.response.send_message(
-            "✅ **Encomenda finalizada!**\n\n"
-            f"{resumo}\n\n"
-            "📨 A equipe recebeu o registro.",
-            ephemeral=False
-        )
-
-    @discord.ui.button(
-        label="Cancelar",
-        emoji="❌",
-        style=discord.ButtonStyle.danger,
-        custom_id="cb_cancelar_encomenda"
-    )
-    async def cancelar(
-        self,
-        interaction,
-        button
-    ):
-
-        carrinhos.pop(
-            interaction.user.id,
-            None
-        )
-
-        await interaction.response.send_message(
-            "❌ Encomenda cancelada.",
-            ephemeral=True
-        )
-
-
-# =========================================================
-# PAINEL PRINCIPAL
-# =========================================================
-
-class PainelEncomendaView(
-    discord.ui.View
-):
-
-    def __init__(self):
-
-        super().__init__(
-            timeout=None
-        )
-
-    @discord.ui.button(
-        label="Fazer Encomenda",
-        emoji="📦",
-        style=discord.ButtonStyle.success,
-        custom_id="cb_fazer_encomenda"
-    )
-    async def fazer(
-        self,
-        interaction,
-        button
-    ):
-
-        guild = interaction.guild
-
-        if guild is None:
-
-            await interaction.response.send_message(
-                "❌ Use isso dentro de um servidor.",
-                ephemeral=True
-            )
-
-            return
-
-        categoria = discord.utils.get(
-            guild.categories,
-            name="📦 ENCOMENDAS"
-        )
-
-        if categoria is None:
-
-            categoria = await guild.create_category(
-                "📦 ENCOMENDAS"
-            )
-
-        # Verifica se já existe ticket
-        for canal in categoria.text_channels:
-
-            if canal.topic == (
-                f"encomenda:{interaction.user.id}"
-            ):
-
-                await interaction.response.send_message(
-                    f"❌ Você já possui uma encomenda aberta: "
-                    f"{canal.mention}",
-                    ephemeral=True
-                )
-
-                return
-
-        overwrites = {
-
-            guild.default_role:
-                discord.PermissionOverwrite(
-                    view_channel=False
-                ),
-
-            interaction.user:
-                discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True
-                ),
-
-            guild.me:
-                discord.PermissionOverwrite(
-                    view_channel=True,
-                    send_messages=True,
-                    read_message_history=True,
-                    manage_channels=True
-                )
-        }
-
-        nome = (
-            "encomenda-"
-            + interaction.user.name.lower()
-        )
-
-        canal = await guild.create_text_channel(
-            nome[:90],
-            category=categoria,
-            overwrites=overwrites,
-            topic=(
-                f"encomenda:{interaction.user.id}"
-            )
-        )
-
-        carrinhos[
-            interaction.user.id
-        ] = {}
-
-        embed = discord.Embed(
-            title="📦 ENCOMENDA",
-            description=(
-                "Bem-vindo!\n\n"
-                "Use **Adicionar item** para começar.\n\n"
-                "Você poderá:\n"
-                "➕ Adicionar\n"
-                "✏️ Alterar quantidade\n"
-                "🗑️ Remover\n"
-                "📋 Conferir\n"
-                "💰 Ver o total\n"
-                "✅ Finalizar\n"
-                "❌ Cancelar"
-            ),
+            title="📋 PERMISSÕES CAMPO BELO",
+            description=texto,
             color=discord.Color.blue()
         )
 
-        await canal.send(
-            content=interaction.user.mention,
-            embed=embed,
-            view=EncomendaView()
+        embed.set_footer(
+            text="Administradores possuem acesso total."
         )
 
         await interaction.response.send_message(
-            f"✅ Encomenda criada: {canal.mention}",
+            embed=embed,
             ephemeral=True
         )
 
 
+class PermissaoView(discord.ui.View):
+
+    def __init__(self):
+
+        super().__init__(timeout=120)
+
+        self.add_item(
+            PermissaoSelect()
+        )
+
+
+class RemoverPermissaoView(discord.ui.View):
+
+    def __init__(self):
+
+        super().__init__(timeout=120)
+
+        self.add_item(
+            RemoverPermissaoSelect()
+        )
+
+
 # =========================================================
-# /CRIARPAINEL
+# /PAINELPERMISSOES
 # =========================================================
 
 @tree.command(
-    name="criarpainel",
-    description="Cria o painel de encomendas"
+    name="painelpermissoes",
+    description="Cria o painel para configurar cargos"
 )
-async def criarpainel(
+async def painelpermissoes(
     interaction: discord.Interaction
 ):
 
+    if not interaction.user.guild_permissions.administrator:
+
+        await interaction.response.send_message(
+            "❌ Apenas administradores podem criar o painel.",
+            ephemeral=True
+        )
+
+        return
+
     embed = discord.Embed(
-        title="📦 CENTRAL DE ENCOMENDAS",
+        title="⚙️ CONFIGURAÇÃO DE PERMISSÕES",
         description=(
-            "Clique em **Fazer Encomenda**.\n\n"
-            "Você poderá adicionar itens, "
-            "alterar quantidades, remover itens "
-            "e conferir o total antes de finalizar."
+            "Use os botões abaixo para configurar "
+            "os cargos do servidor.\n\n"
+            "➕ **Adicionar permissão**\n"
+            "Escolha o cargo e a função que ele poderá usar.\n\n"
+            "➖ **Remover permissão**\n"
+            "Retire uma função de um cargo.\n\n"
+            "📋 **Ver permissões**\n"
+            "Veja todos os cargos configurados."
         ),
-        color=discord.Color.blue()
+        color=discord.Color.gold()
     )
 
     await interaction.channel.send(
         embed=embed,
-        view=PainelEncomendaView()
+        view=PainelPermissoesView()
     )
 
     await interaction.response.send_message(
-        "✅ Painel criado!",
+        "✅ Painel de permissões criado!",
         ephemeral=True
     )
 
@@ -1165,7 +759,17 @@ async def criarranking(
     interaction: discord.Interaction
 ):
 
-    global ranking_message
+    if not possui_permissao(
+        interaction,
+        "criar_ranking"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para criar o ranking.",
+            ephemeral=True
+        )
+
+        return
 
     await interaction.response.defer(
         ephemeral=True
@@ -1184,13 +788,11 @@ async def criarranking(
 
     dados = novo_ranking()
 
-    ranking_message = (
-        await interaction.channel.send(
-            embed=criar_embed_ranking(
-                dados
-            )
-        )
+    ranking_message = await interaction.channel.send(
+        embed=criar_embed_ranking(dados)
     )
+
+    globals()["ranking_message"] = ranking_message
 
     await enviar_webhook(
         WEBHOOK_RANKING,
@@ -1259,10 +861,22 @@ async def ranking(
     valor="Valor gasto"
 )
 async def adicionargasto(
-    interaction,
+    interaction: discord.Interaction,
     favela: str,
     valor: int
 ):
+
+    if not possui_permissao(
+        interaction,
+        "adicionar"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para adicionar gastos.",
+            ephemeral=True
+        )
+
+        return
 
     await interaction.response.defer(
         ephemeral=True
@@ -1299,9 +913,7 @@ async def adicionargasto(
 
     dados[favela] += valor
 
-    sucesso = await atualizar_ranking(
-        dados
-    )
+    sucesso = await atualizar_ranking(dados)
 
     if not sucesso:
 
@@ -1317,10 +929,12 @@ async def adicionargasto(
         discord.Embed(
             title="➕ GASTO ADICIONADO",
             description=(
-                f"👤 {interaction.user.mention}\n"
-                f"🏘️ {favela}\n"
-                f"💰 +{dinheiro(valor)}\n"
-                f"📊 Total: "
+                f"👤 **Responsável:** "
+                f"{interaction.user.mention}\n"
+                f"🏘️ **Favela:** {favela}\n"
+                f"💰 **Adicionado:** "
+                f"+{dinheiro(valor)}\n"
+                f"📊 **Total:** "
                 f"{dinheiro(dados[favela])}"
             ),
             color=discord.Color.green()
@@ -1349,10 +963,22 @@ async def adicionargasto(
     valor="Valor a remover"
 )
 async def removergasto(
-    interaction,
+    interaction: discord.Interaction,
     favela: str,
     valor: int
 ):
+
+    if not possui_permissao(
+        interaction,
+        "remover"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para remover gastos.",
+            ephemeral=True
+        )
+
+        return
 
     await interaction.response.defer(
         ephemeral=True
@@ -1399,9 +1025,7 @@ async def removergasto(
 
     dados[favela] -= valor
 
-    sucesso = await atualizar_ranking(
-        dados
-    )
+    sucesso = await atualizar_ranking(dados)
 
     if not sucesso:
 
@@ -1417,10 +1041,12 @@ async def removergasto(
         discord.Embed(
             title="➖ GASTO REMOVIDO",
             description=(
-                f"👤 {interaction.user.mention}\n"
-                f"🏘️ {favela}\n"
-                f"💰 -{dinheiro(valor)}\n"
-                f"📊 Total: "
+                f"👤 **Responsável:** "
+                f"{interaction.user.mention}\n"
+                f"🏘️ **Favela:** {favela}\n"
+                f"💰 **Removido:** "
+                f"-{dinheiro(valor)}\n"
+                f"📊 **Total:** "
                 f"{dinheiro(dados[favela])}"
             ),
             color=discord.Color.red()
@@ -1428,7 +1054,9 @@ async def removergasto(
     )
 
     await interaction.followup.send(
-        "✅ Gasto removido.",
+        f"✅ Gasto removido de **{favela}**.\n"
+        f"📊 Total: "
+        f"**{dinheiro(dados[favela])}**",
         ephemeral=True
     )
 
@@ -1445,7 +1073,7 @@ async def removergasto(
     favela="Nome da favela"
 )
 async def gastototal(
-    interaction,
+    interaction: discord.Interaction,
     favela: str
 ):
 
@@ -1490,8 +1118,20 @@ async def gastototal(
     description="Zera todos os gastos"
 )
 async def zerarranking(
-    interaction
+    interaction: discord.Interaction
 ):
+
+    if not possui_permissao(
+        interaction,
+        "zerar"
+    ):
+
+        await interaction.response.send_message(
+            "❌ Você não tem permissão para zerar o ranking.",
+            ephemeral=True
+        )
+
+        return
 
     await interaction.response.defer(
         ephemeral=True
@@ -1510,9 +1150,7 @@ async def zerarranking(
 
     dados = novo_ranking()
 
-    sucesso = await atualizar_ranking(
-        dados
-    )
+    sucesso = await atualizar_ranking(dados)
 
     if not sucesso:
 
@@ -1557,17 +1195,21 @@ async def on_app_command_error(
 
     try:
 
+        mensagem = (
+            "❌ Ocorreu um erro ao executar o comando."
+        )
+
         if interaction.response.is_done():
 
             await interaction.followup.send(
-                "❌ Ocorreu um erro ao executar o comando.",
+                mensagem,
                 ephemeral=True
             )
 
         else:
 
             await interaction.response.send_message(
-                "❌ Ocorreu um erro ao executar o comando.",
+                mensagem,
                 ephemeral=True
             )
 
